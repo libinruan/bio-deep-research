@@ -1,0 +1,12 @@
+# Recreate with: conda env create -p ./.conda -f environment.yml
+name: bio-deep-research
+channels: [conda-forge]
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - claude-agent-sdk>=0.2.163
+      - fastapi
+      - uvicorn[standard]
+      - httpx
+      - pydantic

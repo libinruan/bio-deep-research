@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bio Deep Research</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<aside id="sidebar">
+  <div class="brand"><span class="logo">◈</span> Bio Deep Research</div>
+  <button id="new-search" class="btn primary wide">New search</button>
+  <div class="side-label">History</div>
+  <nav id="history"></nav>
+  <div id="health" class="health"></div>
+</aside>
+
+<main id="main">
+  <section id="home">
+    <h1>Search the biomedical literature</h1>
+    <p class="lede">Ask a research question. Answers are built from PubMed, Europe PMC, preprints and trial registries, and every citation is checked against the record it came from.</p>
+    <form id="ask" class="ask">
+      <textarea id="question" rows="3" placeholder="e.g. Does semaglutide reduce heart failure events in patients with preserved ejection fraction?" required></textarea>
+      <div class="controls">
+        <div class="seg" role="radiogroup" aria-label="Depth">
+          <label><input type="radio" name="mode" value="quick" checked><span>Quick answer</span></label>
+          <label><input type="radio" name="mode" value="deep"><span>Deep research</span></label>
+        </div>
+        <label class="check"><input type="checkbox" id="hypotheses"> Propose new hypotheses</label>
+        <label class="check"><input type="checkbox" id="audit" checked> Audit claims</label>
+        <label class="years">Years <input type="number" id="year-from" placeholder="from" min="1900" max="2100"> – <input type="number" id="year-to" placeholder="to" min="1900" max="2100"></label>
+        <button class="btn primary" type="submit">Search</button>
+      </div>
+      <p class="hint" id="mode-hint"></p>
+    </form>
+    <div class="examples" id="examples"></div>
+  </section>
+
+  <section id="thread" hidden>
+    <div id="turns"></div>
+    <form id="follow" class="ask follow">
+      <textarea id="follow-q" rows="2" placeholder="Ask a follow-up about these results…" required></textarea>
+      <button class="btn primary" type="submit">Ask</button>
+    </form>
+  </section>
+</main>
+
+<div id="pop" class="pop" hidden></div>
+<script src="/static/vendor/marked.min.js"></script>
+<script src="/static/vendor/purify.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
