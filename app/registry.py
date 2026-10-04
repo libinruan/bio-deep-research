@@ -202,16 +202,3 @@ class Registry:
         body = CITATION_RE.sub(render, report)
         references = [{**self.records[key], "n": i + 1} for i, key in enumerate(order)]
         return {"report": body, "references": references, "problems": problems}
-
-
-def format_reference(ref: dict[str, Any]) -> str:
-    """One plain-text reference line (used for the Markdown export)."""
-    authors = ref.get("authors") or []
-    who = ", ".join(authors[:3]) + (" et al" if len(authors) > 3 else "")
-    ids = "; ".join(x for x in (
-        f"PMID {ref['pmid']}" if ref.get("pmid") else "",
-        f"doi:{ref['doi']}" if ref.get("doi") else "",
-        ref.get("nct") or "",
-    ) if x)
-    flags = "".join(f" [{f}]" for f, on in (("PREPRINT", ref.get("preprint")), ("RETRACTED", ref.get("retracted"))) if on)
-    return f"{ref['n']}. {who + '. ' if who else ''}{ref.get('title', '').rstrip('.')}. {ref.get('journal', '')} {ref.get('year') or ''}. {ids}{flags}".replace("  ", " ")

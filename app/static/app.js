@@ -166,6 +166,22 @@ function scheduleDraft(turn) {
 
 // ------------------------------------------------------------------ rendering
 
+const EXPORT_FORMATS = [
+  ["pdf", "PDF", "Formatted PDF with clickable citations"],
+  ["md", "Markdown", "Markdown with every citation linked to the paper"],
+  ["html", "HTML", "Single self-contained page"],
+  ["bib", "BibTeX", "Reference list for a citation manager"],
+  ["ris", "RIS", "Reference list for EndNote, Zotero or Mendeley"],
+];
+
+function exportBar(turn, labelled = false) {
+  const base = `/api/threads/${current.id}/turns/${turn.id}/export`;
+  const links = EXPORT_FORMATS.map(([f, label, title]) =>
+    `<a class="btn small" href="${base}?format=${f}" title="${esc(title)}" data-format="${f}">${label}</a>`).join("");
+  const preview = `<a class="btn small" href="/api/threads/${current.id}/turns/${turn.id}/print" target="_blank" rel="noopener">Print view</a>`;
+  return labelled ? `<span class="actions-label">Export this answer</span>${links}${preview}` : links;
+}
+
 function badges(ref) {
   const out = [];
   if (ref.retracted) out.push(`<span class="badge bad">Retracted</span>`);
@@ -270,13 +286,13 @@ function renderTurn(turn) {
   } else {
     body = turn.report ? md(turn.report) : `<div class="empty">No report was produced.</div>`;
   }
-  const exports = turn.status === "done" ? ["md", "bib", "ris"].map((f) =>
-    `<a class="btn small" href="/api/threads/${current.id}/turns/${turn.id}/export?format=${f}">${{ md: "Markdown", bib: "BibTeX", ris: "RIS" }[f]}</a>`).join("") : "";
+  const exports = turn.status === "done" ? exportBar(turn) : "";
 
   el.innerHTML = `
     <div class="turn-head"><h2>${esc(turn.question)}</h2><div class="meta">${chips}${exports}</div></div>
     <div class="cols">
-      <div>${error}${problems}<article class="report">${body}</article></div>
+      <div>${error}${problems}<article class="report">${body}</article>
+        ${turn.status === "done" ? `<div class="actions">${exportBar(turn, true)}</div>` : ""}</div>
       <div class="side">
         <div class="tabs" role="tablist">
           ${[["sources", `Sources${turn.references.length ? ` (${turn.references.length})` : ""}`], ["strategy", "Search strategy"], ["activity", "Activity"], ["audit", `Audit${issues ? ` (${issues})` : ""}`]]
@@ -301,7 +317,32 @@ const turnOf = (node) => {
   return el && current.turns.find((t) => `turn-${t.id}` === el.id);
 };
 
+// The PDF is rendered on demand and takes a few seconds, so fetch it with feedback
+// rather than letting the browser sit on a pending navigation.
+async function downloadPdf(link) {
+  const label = link.textContent;
+  link.setAttribute("aria-busy", "true");
+  link.textContent = "Preparing…";
+  try {
+    const res = await fetch(link.href);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Export failed (${res.status})`);
+    const url = URL.createObjectURL(await res.blob());
+    const a = Object.assign(document.createElement("a"), { href: url, download: "" });
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    link.removeAttribute("aria-busy");
+    link.textContent = label;
+  }
+}
+
 $("#turns").addEventListener("click", (e) => {
+  const pdf = e.target.closest('a[data-format="pdf"]');
+  if (pdf) { e.preventDefault(); downloadPdf(pdf); return; }
   const turn = turnOf(e.target);
   if (!turn) return;
   const tabBtn = e.target.closest("[data-tab]");

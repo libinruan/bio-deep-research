@@ -10,13 +10,13 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent
-from .registry import Registry, format_reference
+from . import agent, export
+from .registry import Registry
 
 ROOT = Path(__file__).resolve().parent.parent
 THREADS = ROOT / "data" / "threads"
@@ -242,45 +242,57 @@ async def delete_thread(thread_id: str) -> dict[str, bool]:
 
 # ----------------------------------------------------------------------------- export
 
-def _bibtex(ref: dict[str, Any]) -> str:
-    first = re.sub(r"[^A-Za-z]", "", (ref.get("authors") or ["anon"])[0].split(" ")[0]) or "anon"
-    fields = {
-        "title": ref.get("title"), "author": " and ".join(ref.get("authors") or []), "journal": ref.get("journal"),
-        "year": ref.get("year"), "doi": ref.get("doi"), "pmid": ref.get("pmid"), "url": ref.get("url"),
-        "note": "Retracted" if ref.get("retracted") else ("Preprint" if ref.get("preprint") else None),
-    }
-    body = ",\n".join(f"  {k} = {{{v}}}" for k, v in fields.items() if v)
-    kind = "misc" if ref.get("preprint") or ref.get("kind") == "trial" else "article"
-    return f"@{kind}{{{first}{ref.get('year') or ''}_{ref['n']},\n{body}\n}}"
-
-
-def _ris(ref: dict[str, Any]) -> str:
-    lines = ["TY  - " + ("UNPB" if ref.get("preprint") else "JOUR")]
-    lines += [f"AU  - {a}" for a in ref.get("authors") or []]
-    for tag, key in (("TI", "title"), ("JO", "journal"), ("PY", "year"), ("DO", "doi"), ("AN", "pmid"), ("UR", "url"), ("AB", "abstract")):
-        if ref.get(key):
-            lines.append(f"{tag}  - {str(ref[key]).replace(chr(10), ' ')}")
-    return "\n".join(lines + ["ER  - "])
-
-
-@app.get("/api/threads/{thread_id}/turns/{turn_id}/export")
-async def export_turn(thread_id: str, turn_id: str, format: str = "md") -> PlainTextResponse:
-    thread = load_thread(thread_id)
+def _turn_or_404(thread: dict[str, Any], turn_id: str) -> dict[str, Any]:
     turn = next((t for t in thread["turns"] if t["id"] == turn_id), None)
     if turn is None:
         raise HTTPException(404, "Unknown turn")
+    return turn
+
+
+@app.get("/api/threads/{thread_id}/turns/{turn_id}/print")
+async def print_view(thread_id: str, turn_id: str) -> HTMLResponse:
+    """The standalone page behind the HTML and PDF exports; also readable on its own."""
+    thread = load_thread(thread_id)
+    turn = _turn_or_404(thread, turn_id)
+    return HTMLResponse(export.to_html(thread, turn, engine=agent.engine()["model"]))
+
+
+EXPORTS = {
+    "md": ("text/markdown; charset=utf-8", "md"),
+    "bib": ("application/x-bibtex; charset=utf-8", "bib"),
+    "ris": ("application/x-research-info-systems; charset=utf-8", "ris"),
+    "html": ("text/html; charset=utf-8", "html"),
+    "pdf": ("application/pdf", "pdf"),
+}
+
+
+@app.get("/api/threads/{thread_id}/turns/{turn_id}/export")
+async def export_turn(request: Request, thread_id: str, turn_id: str, format: str = "md") -> Response:
+    thread = load_thread(thread_id)
+    turn = _turn_or_404(thread, turn_id)
+    if format not in EXPORTS:
+        raise HTTPException(400, f"Unknown export format. Choose one of: {', '.join(EXPORTS)}")
+    media_type, ext = EXPORTS[format]
     refs = turn["references"]
-    if format == "bib":
-        body, ext = "\n\n".join(_bibtex(r) for r in refs), "bib"
+
+    if format == "pdf":
+        url = str(request.url_for("print_view", thread_id=thread_id, turn_id=turn_id))
+        try:
+            body: str | bytes = await export.to_pdf(url)
+        except RuntimeError as exc:
+            raise HTTPException(503, str(exc)) from exc
+    elif format == "html":
+        body = export.to_html(thread, turn, engine=agent.engine()["model"])
+    elif format == "bib":
+        body = "\n\n".join(export.to_bibtex(r) for r in refs)
     elif format == "ris":
-        body, ext = "\n\n".join(_ris(r) for r in refs), "ris"
+        body = "\n\n".join(export.to_ris(r) for r in refs)
     else:
-        report = re.sub(r"\[\[(\d+)\]\]\(#ref-\d+\)", r"[\1]", turn["report"])
-        parts = [f"# {turn['question']}", report, "## References", "\n".join(format_reference(r) for r in refs)]
-        if turn.get("strategy"):
-            parts += ["## Search strategy", "\n\n".join(f"**{d['database']}**\n\n```\n{d['query']}\n```" for d in turn["strategy"]["databases"])]
-        body, ext = "\n\n".join(parts), "md"
-    return PlainTextResponse(body, headers={"Content-Disposition": f'attachment; filename="research-{turn_id}.{ext}"'})
+        body = export.to_markdown(turn)
+
+    slug = re.sub(r"[^a-z0-9]+", "-", turn["question"].lower())[:50].strip("-") or "research"
+    return Response(content=body, media_type=media_type,
+                    headers={"Content-Disposition": f'attachment; filename="{slug}.{ext}"'})
 
 
 @app.get("/api/health")

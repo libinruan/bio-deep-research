@@ -131,3 +131,8 @@ h1 { font: 600 30px/1.2 Georgia, "Times New Roman", serif; margin: 0 0 8px; }
   padding: 10px 12px; box-shadow: var(--shadow); font-size: 13px; pointer-events: none; }
 .pop .by { color: var(--muted); font-size: 12px; margin-top: 3px; }
 [hidden] { display: none !important; }
+
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+.actions-label { font-size: 13px; color: var(--muted); margin-right: auto; }
+.btn[aria-busy="true"] { opacity: .6; pointer-events: none; }
