@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import deque
 from pathlib import Path
 from typing import Any, Callable
 
@@ -35,6 +36,15 @@ class ResearchError(RuntimeError):
     pass
 
 
+_NOISE = ("DeprecationWarning", "ExperimentalWarning", "node:internal", "(node:", "punycode")
+
+
+def _useful(log: deque[str]) -> str:
+    """The last few stderr lines that say something, as a quotable detail."""
+    lines = [ln for ln in log if not any(n in ln for n in _NOISE)]
+    return "\n".join(lines[-6:])[:1200]
+
+
 def skill_names() -> list[str]:
     return sorted(p.parent.name for p in SKILLS_DIR.glob("*/SKILL.md"))
 
@@ -56,6 +66,21 @@ async def _confine_reads(hook_input: Any, tool_use_id: str | None, context: Any)
     }}
 
 
+ERROR_HELP = {
+    "authentication_failed": "Claude rejected the login. Run `claude` in a terminal and log in, then try again.",
+    "billing_error": "Your Claude account could not be billed for this request (out of credit, or no active plan).",
+    "rate_limit": "Your Claude usage limit was reached. Wait for the limit to reset, or try a quick search instead of deep research.",
+    "invalid_request": "Claude rejected the request itself. The most common causes are a question the model's safety filters declined to work on, and a conversation that has grown too large to send.",
+    "server_error": "Claude had a server-side error. This is usually temporary; try again.",
+    "unknown": "Claude returned an unspecified error.",
+}
+
+
+def _assistant_error_text(kind: str, stderr_tail: str) -> str:
+    text = f"{ERROR_HELP.get(kind, ERROR_HELP['unknown'])} (reported as `{kind}`)"
+    return f"{text}\n\nDetail from Claude Code:\n{stderr_tail}" if stderr_tail else text
+
+
 def _error_text(msg: ResultMessage) -> str:
     detail = "; ".join(msg.errors or []) or msg.result or msg.subtype
     if msg.subtype == "error_max_turns":
@@ -71,6 +96,13 @@ async def research(
 ) -> dict[str, Any]:
     """Run the agent on one question. Returns {report, session_id, usage}; the report still has raw identifier citations."""
     server, tool_names = build_server(registry, emit)
+    log: deque[str] = deque(maxlen=60)  # the CLI writes the real API error here
+
+    def capture(line: str) -> None:
+        line = line.strip()
+        if line:
+            log.append(line)
+
     options = ClaudeAgentOptions(
         system_prompt=prompts.system_prompt(),
         model=MODEL,
@@ -84,6 +116,7 @@ async def research(
         mcp_servers={SERVER: server},
         hooks={"PreToolUse": [HookMatcher(matcher="Read", hooks=[_confine_reads])]},
         include_partial_messages=True,
+        stderr=capture,
         resume=session_id,
         max_turns=120 if mode == "deep" else 40,
     )
@@ -103,7 +136,7 @@ async def research(
                 emit({"type": "delta", "text": event["delta"]["text"]})
         elif isinstance(msg, AssistantMessage):
             if msg.error:
-                raise ResearchError(f"Claude returned an error ({msg.error}). If this is an authentication error, run `claude` and log in.")
+                raise ResearchError(_assistant_error_text(msg.error, _useful(log)))
             text = "".join(getattr(b, "text", "") for b in msg.content if type(b).__name__ == "TextBlock")
             if text.strip():
                 last_text = text
