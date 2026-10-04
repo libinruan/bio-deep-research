@@ -3,6 +3,12 @@
 const $ = (sel, root = document) => root.querySelector(sel);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const md = (text) => DOMPurify.sanitize(marked.parse(text || "", { gfm: true }));
+// localStorage throws in some privacy modes; a lost preference must not break the page.
+const store = {
+  get(key, fallback) { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } },
+  set(key, value) { try { localStorage.setItem(key, value); } catch { /* preference not persisted */ } },
+};
+
 const api = async (url, opts) => {
   const res = await fetch(url, opts);
   if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `Request failed (${res.status})`);
@@ -24,7 +30,7 @@ const TOOL_LABELS = {
   search_clinical_trials: "ClinicalTrials.gov", get_citing_papers: "Citing papers", get_paper_details: "Paper details",
   get_full_text: "Full text", record_search_strategy: "Search strategy", Skill: "Skill", Read: "Skill reference",
 };
-const PANES_ORDER = ["sources", "strategy", "activity", "audit"];
+const PANES_ORDER = ["sources", "outline", "strategy", "activity", "audit"];
 const STRONG = new Set(["Meta-analysis", "Systematic review", "RCT", "Guideline"]);
 const VERDICTS = { contradicted: "Contradicted by source", overstated: "Overstated", wrong_number: "Number differs", off_topic: "Source is off topic", not_in_abstract: "Not found in abstract" };
 
@@ -59,6 +65,8 @@ $("#history").addEventListener("click", async (e) => {
 
 function showHome() {
   current = null;
+  outlineTurnId = null;
+  toggleOutline(false);
   history.replaceState(null, "", location.pathname);
   $("#home").hidden = false; $("#thread").hidden = true;
   $("#question").focus();
@@ -258,7 +266,7 @@ function auditPane(turn) {
     </div>`).join("");
 }
 
-const PANES = { sources: sourcesPane, strategy: strategyPane, activity: activityPane, audit: auditPane };
+const PANES = { sources: sourcesPane, outline: outlinePane, strategy: strategyPane, activity: activityPane, audit: auditPane };
 
 function renderTurn(turn) {
   const el = $(`#turn-${turn.id}`);
@@ -295,7 +303,7 @@ function renderTurn(turn) {
         ${turn.status === "done" ? `<div class="actions">${exportBar(turn, true)}</div>` : ""}</div>
       <div class="side">
         <div class="tabs" role="tablist">
-          ${[["sources", `Sources${turn.references.length ? ` (${turn.references.length})` : ""}`], ["strategy", "Search strategy"], ["activity", "Activity"], ["audit", `Audit${issues ? ` (${issues})` : ""}`]]
+          ${[["sources", `Sources${turn.references.length ? ` (${turn.references.length})` : ""}`], ["outline", "Outline"], ["strategy", "Search strategy"], ["activity", "Activity"], ["audit", `Audit${issues ? ` (${issues})` : ""}`]]
             .map(([k, label]) => `<button role="tab" data-tab="${k}" aria-selected="${k === tab}">${label}</button>`).join("")}
         </div>
         <div class="pane">${PANES[tab](turn)}</div>
@@ -310,7 +318,161 @@ function renderTurn(turn) {
     a.dataset.n = n; a.textContent = n;
   });
   el.querySelectorAll(".report a:not(.cite)").forEach((a) => { a.target = "_blank"; a.rel = "noopener"; });
+  markSections(el);
+  scheduleOutline();
 }
+
+// ------------------------------------------------------------------ outline
+
+const OUTLINE_PREF = "bdr.outline-pref";
+const LONG_ANSWER_WORDS = 900;
+let outlinePref = store.get(OUTLINE_PREF, "auto");
+let outlineOpen = false;
+let outlineEntries = [];
+let outlineTurnId = null;
+
+// Headings, plus the bold lead-ins the reports use to open a paragraph.
+function markSections(turnEl) {
+  const report = turnEl.querySelector(".report");
+  if (!report) return;
+  let n = 0;
+  for (const node of report.querySelectorAll("h1, h2, h3, h4, p > strong:first-child")) {
+    const lead = node.tagName === "STRONG";
+    const anchor = lead ? node.parentElement : node;
+    if (lead && anchor.firstChild !== node) continue;
+    const text = node.textContent.trim().replace(/[.:,;]+$/, "");
+    if (text.length < 4 || text.length > 140) continue;
+    if (!anchor.id) anchor.id = `${turnEl.id}-s${++n}`;
+    anchor.dataset.outline = text;
+    anchor.dataset.level = lead ? 4 : Number(node.tagName[1]);
+  }
+}
+
+function activeTurnEl() {
+  const els = [...document.querySelectorAll(".turn")];
+  if (els.length < 2) return els[0] || null;
+  const mid = window.innerHeight / 2;
+  return els.find((el) => {
+    const r = el.getBoundingClientRect();
+    return r.top <= mid && r.bottom >= mid;
+  }) || els.reduce((best, el) => {
+    const d = Math.abs(el.getBoundingClientRect().top);
+    return !best || d < Math.abs(best.getBoundingClientRect().top) ? el : best;
+  }, null);
+}
+
+function readOutline(turnEl) {
+  if (!turnEl) return [];
+  return [...turnEl.querySelectorAll("[data-outline]")].map((el) => ({
+    id: el.id, text: el.dataset.outline, level: Number(el.dataset.level),
+  }));
+}
+
+function currentSectionId() {
+  let here = null;
+  for (const entry of outlineEntries) {
+    const el = document.getElementById(entry.id);
+    if (el && el.getBoundingClientRect().top <= 140) here = entry.id;
+  }
+  return here || (outlineEntries[0] && outlineEntries[0].id);
+}
+
+function outlineListHTML(entries, filter = "") {
+  const needle = filter.trim().toLowerCase();
+  const shown = needle ? entries.filter((e) => e.text.toLowerCase().includes(needle)) : entries;
+  if (!shown.length) {
+    return `<div class="outline-empty">${entries.length ? "No section matches." : "This answer has no headings to navigate."}</div>`;
+  }
+  const here = needle ? null : currentSectionId();
+  return shown.map((e) => `<a href="#${e.id}" class="lv${e.level}${e.id === here ? " here" : ""}">${esc(e.text)}</a>`).join("");
+}
+
+function outlinePane(turn) {
+  const entries = readOutline(document.getElementById(`turn-${turn.id}`));
+  if (!entries.length) {
+    return `<div class="empty">${turn.status === "running" ? "Sections appear as the answer is written." : "This answer has no headings to navigate."}</div>`;
+  }
+  return `<nav class="outline-list">${outlineListHTML(entries)}</nav>`;
+}
+
+let outlineTimer = null;
+function scheduleOutline() {
+  if (outlineTimer) return;
+  outlineTimer = requestAnimationFrame(() => {
+    outlineTimer = null;
+    refreshOutline();
+  });
+}
+
+function refreshOutline() {
+  const turnEl = activeTurnEl();
+  if (!turnEl) return;
+  const changed = turnEl.id !== outlineTurnId;
+  outlineTurnId = turnEl.id;
+  outlineEntries = readOutline(turnEl);
+  if (changed && outlinePref !== "never") autoOpen(turnEl);
+  if (outlineOpen) $("#outline-list").innerHTML = outlineListHTML(outlineEntries, $("#outline-filter").value);
+}
+
+function autoOpen(turnEl) {
+  if (outlineOpen || outlinePref === "never") return;
+  const words = (turnEl.querySelector(".report")?.textContent || "").split(/\s+/).length;
+  if (outlinePref === "always" || words >= LONG_ANSWER_WORDS) toggleOutline(true);
+}
+
+function toggleOutline(open = !outlineOpen, focusFilter = false) {
+  outlineOpen = open;
+  $("#outline").hidden = !open;
+  document.body.classList.toggle("outline-open", open);
+  if (open) {
+    outlineEntries = readOutline(activeTurnEl());
+    $("#outline-list").innerHTML = outlineListHTML(outlineEntries, $("#outline-filter").value);
+    if (focusFilter) $("#outline-filter").select();
+  }
+}
+
+function jumpTo(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  el.classList.remove("jumped");
+  void el.offsetWidth;
+  el.classList.add("jumped");
+}
+
+$("#outline-list").addEventListener("click", (e) => {
+  const link = e.target.closest("a");
+  if (!link) return;
+  e.preventDefault();
+  jumpTo(link.getAttribute("href").slice(1));
+});
+$("#turns").addEventListener("click", (e) => {
+  const link = e.target.closest(".pane .outline-list a");
+  if (!link) return;
+  e.preventDefault();
+  jumpTo(link.getAttribute("href").slice(1));
+}, true);
+$("#outline-filter").addEventListener("input", (e) => {
+  $("#outline-list").innerHTML = outlineListHTML(outlineEntries, e.target.value);
+});
+$("#outline-close").addEventListener("click", () => toggleOutline(false));
+const prefSelect = $("#outline-pref");
+prefSelect.value = outlinePref;
+prefSelect.addEventListener("change", (e) => {
+  outlinePref = e.target.value;
+  store.set(OUTLINE_PREF, outlinePref);
+});
+
+const typing = (el) => el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "k" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return toggleOutline(true, true); }
+  if (e.key === "Escape" && outlineOpen) return toggleOutline(false);
+  if (e.key.toLowerCase() === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e.target)) {
+    e.preventDefault();
+    toggleOutline();
+  }
+});
+window.addEventListener("scroll", scheduleOutline, { passive: true });
 
 const turnOf = (node) => {
   const el = node.closest(".turn");

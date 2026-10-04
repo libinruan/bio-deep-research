@@ -56,6 +56,20 @@ Caveats worth knowing:
 
 Follow-up questions in a thread reuse everything already retrieved.
 
+### Reading and exporting an answer
+
+A deep report runs to several thousand words, so each answer has an **Outline** built from
+its headings and bold paragraph lead-ins. Press <kbd>O</kbd> to show or hide the floating
+outline, <kbd>⌘K</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> to open it with the filter focused, and
+<kbd>Esc</kbd> to close it. It tracks the section you are reading and, by default, opens
+itself for long answers; the dropdown at its foot changes that to always or never. The same
+outline is also a tab beside Sources.
+
+Every answer exports from the bar at its head or foot: **PDF** and **HTML** (citations
+become superscripts that jump to the reference list, which links on to each paper),
+**Markdown** (each citation links straight to the paper), and **BibTeX** / **RIS** for a
+reference manager. PDF export needs Chrome or Chromium installed.
+
 ### Sources
 
 Searched live: **PubMed**, **Europe PMC** (including bioRxiv/medRxiv preprints and
