@@ -25,10 +25,20 @@ one — Kimi (Moonshot), GLM (Z.ai), or a local translation proxy in front of an
 model — can be used instead of Claude. Set three variables in `.env`:
 
 ```bash
+# OpenRouter — one key, hundreds of models
+BDR_BASE_URL=https://openrouter.ai/api
+BDR_MODEL=z-ai/glm-5.3
+BDR_AUTH_TOKEN=sk-or-...
+
+# or a provider directly
 BDR_BASE_URL=https://api.z.ai/api/anthropic   # or https://api.moonshot.ai/anthropic
 BDR_MODEL=glm-5.2                             # or kimi-k3[1m]
-BDR_AUTH_TOKEN=...                            # that provider's API key
+BDR_AUTH_TOKEN=...
 ```
+
+Setting `BDR_BASE_URL` also sends an empty `ANTHROPIC_API_KEY` to the harness. Without that,
+a Claude Code login on the same machine can take precedence and the run quietly bills Claude
+instead of the provider you configured.
 
 Setting `BDR_BASE_URL` changes three things automatically: every model tier is pinned to
 `BDR_MODEL` (background work otherwise asks the endpoint for a Claude model it does not

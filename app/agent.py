@@ -39,7 +39,10 @@ def _engine_env() -> dict[str, str]:
     """Environment for the Claude Code subprocess, pointing it at another provider if asked."""
     if not THIRD_PARTY:
         return {}
-    env = {"ANTHROPIC_BASE_URL": BASE_URL}
+    # ANTHROPIC_API_KEY must be present and empty, not merely unset: left unset, a Claude
+    # Code login on this machine can win and the run quietly bills Claude instead of the
+    # provider configured here.
+    env = {"ANTHROPIC_BASE_URL": BASE_URL, "ANTHROPIC_API_KEY": ""}
     token = os.environ.get("BDR_AUTH_TOKEN", "").strip()
     if token:
         env["ANTHROPIC_AUTH_TOKEN"] = token
