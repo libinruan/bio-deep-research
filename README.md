@@ -65,6 +65,13 @@ outline, <kbd>⌘K</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> to open it with the filt
 itself for long answers; the dropdown at its foot changes that to always or never. The same
 outline is also a tab beside Sources.
 
+Clicking a citation opens **Where this comes from**: the claim it is attached to, the source
+it points at, and the passages of that source closest to the claim, with the shared wording
+highlighted. The match is lexical, weighted towards shared numbers — effect sizes, sample
+sizes and percentages — so it points at a passage rather than judging that the passage
+supports the claim. The audit pass is what judges that, and anything it flagged for that
+citation is shown alongside. When nothing in the abstract shares wording, it says so.
+
 Every answer exports from the bar at its head or foot: **PDF** and **HTML** (citations
 become superscripts that jump to the reference list, which links on to each paper),
 **Markdown** (each citation links straight to the paper), and **BibTeX** / **RIS** for a

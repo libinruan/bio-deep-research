@@ -466,7 +466,10 @@ prefSelect.addEventListener("change", (e) => {
 const typing = (el) => el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable);
 document.addEventListener("keydown", (e) => {
   if (e.key === "k" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return toggleOutline(true, true); }
-  if (e.key === "Escape" && outlineOpen) return toggleOutline(false);
+  if (e.key === "Escape") {
+    if (!evidenceBox.hidden) return closeEvidence();
+    if (outlineOpen) return toggleOutline(false);
+  }
   if (e.key.toLowerCase() === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e.target)) {
     e.preventDefault();
     toggleOutline();
@@ -514,9 +517,7 @@ $("#turns").addEventListener("click", (e) => {
   if (tabBtn) { tabs[turn.id] = tabBtn.dataset.tab; renderTurn(turn); }
   else if (cite) {
     e.preventDefault();
-    tabs[turn.id] = "sources"; renderTurn(turn);
-    const card = document.getElementById(`t${turn.id}-ref-${cite.dataset.n}`);
-    if (card) { card.classList.add("hit"); card.scrollIntoView({ behavior: "smooth", block: "center" }); }
+    showEvidence(cite, turn);
   } else if (copy) {
     navigator.clipboard.writeText(turn.strategy.databases[Number(copy.dataset.copy)].query);
     copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1500);
@@ -526,9 +527,120 @@ $("#turns").addEventListener("click", (e) => {
   }
 });
 
+// ------------------------------------------------------------------ claim evidence
+
+const evidenceBox = $("#evidence");
+
+// The sentence a citation sits in, taken from the rendered report.
+function claimSentence(chip) {
+  const block = chip.closest("p, li, td, th, blockquote, h1, h2, h3, h4");
+  if (!block) return "";
+  const range = document.createRange();
+  range.setStart(block, 0);
+  range.setEndBefore(chip);
+  const offset = range.toString().length;
+  const text = block.textContent;
+  let pos = 0;
+  for (const sentence of text.split(/(?<=[.!?])\s+(?=[A-Z(\[])/)) {
+    const start = text.indexOf(sentence, pos);
+    const end = start + sentence.length;
+    if (offset <= end) return sentence.trim();
+    pos = end;
+  }
+  return text.trim();
+}
+
+function highlight(passage, claim) {
+  const shared = Evidence.sharedTerms(claim, passage);
+  if (!shared.size) return esc(passage);
+  const pattern = [...shared].sort((a, b) => b.length - a.length)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  return esc(passage).replace(new RegExp(`\\b(${pattern})`, "gi"), "<mark>$1</mark>");
+}
+
+function openSourceCard(turn, n) {
+  tabs[turn.id] = "sources";
+  renderTurn(turn);
+  const card = document.getElementById(`t${turn.id}-ref-${n}`);
+  if (card) {
+    card.classList.add("hit");
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.querySelector("details")?.setAttribute("open", "");
+  }
+}
+
+function showEvidence(chip, turn) {
+  const n = Number(chip.dataset.n);
+  const ref = turn.references.find((r) => r.n === n);
+  if (!ref) return;
+  const claim = claimSentence(chip);
+  const passages = ref.abstract ? Evidence.bestPassages(claim, ref.abstract) : [];
+  const issues = ((turn.audit && turn.audit.issues) || []).filter((i) => i.n === n);
+
+  const where = ref.kind === "trial" ? "registry entry" : "abstract";
+  let body = `<blockquote class="ev-claim">${esc(claim)}</blockquote>
+    <div class="ev-source">
+      <a href="${esc(ref.url)}" target="_blank" rel="noopener">${esc(ref.title)}</a>
+      <div class="by">${byline(ref)} · ${esc(ref.key)}</div>
+      <div style="margin-top:5px">${badges(ref)}</div>
+    </div>`;
+
+  if (passages.length) {
+    body += `<div class="ev-label">Closest passage${passages.length > 1 ? "s" : ""} in the ${where}</div>`
+      + passages.map((p) => `<div class="ev-passage">${highlight(p.sentence, claim)}</div>`).join("");
+  } else if (!ref.abstract) {
+    body += `<div class="ev-none">This source has no ${where} stored, so there is nothing to match against. Open it to check the claim.</div>`;
+  } else {
+    body += `<div class="ev-none">No passage in the ${where} shares wording with this claim. The support may be in the full text, or the claim may draw on several sources together — open the source and check.</div>`;
+  }
+  for (const issue of issues) {
+    body += `<div class="ev-label">Flagged by the audit</div><div class="ev-none"><b>${esc(VERDICTS[issue.verdict] || issue.verdict)}.</b> ${esc(issue.explanation)}</div>`;
+  }
+  body += `<div class="ev-foot">
+      <a class="btn small" href="${esc(ref.url)}" target="_blank" rel="noopener">Open source</a>
+      <button class="btn small" data-card="${n}">Show in sources</button>
+    </div>`;
+
+  evidenceBox.querySelector(".ev-body").innerHTML = body;
+  evidenceBox.dataset.turn = turn.id;
+  evidenceBox.hidden = false;
+  pop.hidden = true;
+  document.querySelectorAll("a.cite.open").forEach((c) => c.classList.remove("open"));
+  chip.classList.add("open");
+  place(evidenceBox, chip);
+}
+
+// Anchor a floating panel to an element, kept inside the viewport.
+function place(panel, anchor) {
+  const box = anchor.getBoundingClientRect();
+  panel.style.left = `${Math.max(8, Math.min(box.left - 20, window.innerWidth - panel.offsetWidth - 12))}px`;
+  const below = box.bottom + 8;
+  panel.style.top = below + panel.offsetHeight > window.innerHeight - 8
+    ? `${Math.max(8, box.top - panel.offsetHeight - 8)}px`
+    : `${below}px`;
+}
+
+function closeEvidence() {
+  evidenceBox.hidden = true;
+  document.querySelectorAll("a.cite.open").forEach((c) => c.classList.remove("open"));
+}
+
+$("#ev-close").addEventListener("click", closeEvidence);
+evidenceBox.addEventListener("click", (e) => {
+  const card = e.target.closest("[data-card]");
+  if (!card) return;
+  const turn = current && current.turns.find((t) => t.id === evidenceBox.dataset.turn);
+  if (turn) openSourceCard(turn, Number(card.dataset.card));
+  closeEvidence();
+});
+document.addEventListener("click", (e) => {
+  if (!evidenceBox.hidden && !e.target.closest("#evidence") && !e.target.closest("a.cite")) closeEvidence();
+});
+
 // Hover preview for citations.
 const pop = $("#pop");
 $("#turns").addEventListener("mouseover", (e) => {
+  if (!evidenceBox.hidden) return;
   const cite = e.target.closest("a.cite");
   const turn = cite && turnOf(cite);
   const ref = turn && turn.references.find((r) => r.n === Number(cite.dataset.n));
