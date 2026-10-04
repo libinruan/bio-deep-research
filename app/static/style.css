@@ -204,3 +204,31 @@ h1 { font: 600 30px/1.2 Georgia, "Times New Roman", serif; margin: 0 0 8px; }
   color: var(--warn); font-size: 12px; }
 .entcard .note.ok { background: var(--good-soft); color: var(--good); }
 .entcard a { display: inline-block; margin-top: 8px; font-size: 12.5px; }
+
+/* ---- comparison ---- */
+.cmp-head { max-width: 1000px; margin-bottom: 18px; }
+.cmp-head h1 { font-size: 24px; margin-bottom: 6px; }
+.cmp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; align-items: start; max-width: 1100px; }
+@media (max-width: 860px) { .cmp-grid { grid-template-columns: minmax(0, 1fr); } }
+.cmp-col { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; }
+.cmp-col h2 { font: 600 15px/1.3 system-ui, sans-serif; margin: 0 0 4px; }
+.cmp-col .lead { font-size: 13.5px; line-height: 1.5; }
+.cmp-col .lead p:first-child { margin-top: 8px; }
+.cmp-stats { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0 10px; }
+.cmp-section { max-width: 1100px; margin-top: 24px; }
+.cmp-section h2 { font: 600 17px/1.3 Georgia, serif; margin: 0 0 10px; }
+.overlap { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; font-size: 13.5px; color: var(--muted); }
+.overlap-bar { flex: 1; max-width: 320px; height: 9px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.overlap-bar i { display: block; height: 100%; background: var(--accent); }
+.cmp-refs { font-size: 13px; line-height: 1.5; }
+.cmp-refs li { margin-bottom: 4px; }
+.cmp-refs a { text-decoration: none; }
+.cmp-refs a:hover { text-decoration: underline; }
+.diff { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; background: var(--panel); }
+.diff h3 { font-size: 14px; margin: 0 0 8px; }
+.diff .side { font-size: 13px; margin-bottom: 6px; padding-left: 10px; border-left: 2px solid var(--line); }
+.diff .side b { color: var(--muted); font-weight: 600; }
+.sev { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; padding: 1px 7px; border-radius: 99px; }
+.sev.substantive { background: var(--bad-soft); color: var(--bad); }
+.sev.emphasis { background: var(--warn-soft); color: var(--warn); }
+.sev.wording { background: var(--code); color: var(--muted); }

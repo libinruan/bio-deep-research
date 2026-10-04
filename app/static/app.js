@@ -68,7 +68,7 @@ function showHome() {
   outlineTurnId = null;
   toggleOutline(false);
   history.replaceState(null, "", location.pathname);
-  $("#home").hidden = false; $("#thread").hidden = true;
+  $("#home").hidden = false; $("#thread").hidden = true; $("#compare").hidden = true;
   $("#question").focus();
   loadHistory();
 }
@@ -118,7 +118,7 @@ $("#examples").addEventListener("click", (e) => {
 async function openThread(id) {
   current = await api(`/api/threads/${id}`);
   history.replaceState(null, "", `#${id}`);
-  $("#home").hidden = true; $("#thread").hidden = false;
+  $("#home").hidden = true; $("#thread").hidden = false; $("#compare").hidden = true;
   $("#turns").innerHTML = "";
   for (const turn of current.turns) {
     const el = document.createElement("section");
@@ -188,7 +188,11 @@ function exportBar(turn, labelled = false) {
   const links = EXPORT_FORMATS.map(([f, label, title]) =>
     `<a class="btn small" href="${base}?format=${f}" title="${esc(title)}" data-format="${f}">${label}</a>`).join("");
   const preview = `<a class="btn small" href="/api/threads/${current.id}/turns/${turn.id}/print" target="_blank" rel="noopener">Print view</a>`;
-  return labelled ? `<span class="actions-label">Export this answer</span>${links}${preview}` : links;
+  if (!labelled) return links;
+  const again = `<button class="btn small" data-rerun="1" title="Ask the same question again in a fresh session, then compare">Run again</button>`;
+  const vs = current.compare_of
+    ? `<button class="btn small" data-compare="${esc(current.compare_of)}">Compare with the original</button>` : "";
+  return `<span class="actions-label">Export this answer</span>${links}${preview}${again}${vs}`;
 }
 
 function badges(ref) {
@@ -516,6 +520,17 @@ $("#turns").addEventListener("click", (e) => {
   const cite = e.target.closest("a.cite");
   const copy = e.target.closest("[data-copy]");
   const stop = e.target.closest("[data-stop]");
+  const rerun = e.target.closest("[data-rerun]");
+  const compareBtn = e.target.closest("[data-compare]");
+  if (rerun) {
+    rerun.disabled = true;
+    rerun.textContent = "Starting…";
+    api(`/api/threads/${current.id}/rerun`, { method: "POST" })
+      .then((r) => openThread(r.thread_id))
+      .catch((err) => { alert(err.message); rerun.disabled = false; rerun.textContent = "Run again"; });
+    return;
+  }
+  if (compareBtn) return openCompare(compareBtn.dataset.compare, current.id);
   if (tabBtn) { tabs[turn.id] = tabBtn.dataset.tab; renderTurn(turn); }
   else if (cite) {
     e.preventDefault();
@@ -526,6 +541,97 @@ $("#turns").addEventListener("click", (e) => {
   } else if (stop) {
     stop.disabled = true; stop.textContent = "Stopping…";
     api(`/api/runs/${turn.id}/cancel`, { method: "POST" });
+  }
+});
+
+// ------------------------------------------------------------------ comparing runs
+
+const SEVERITY = { substantive: "Substantive", emphasis: "Emphasis", wording: "Wording only" };
+
+function runColumn(run, label) {
+  const usage = run.usage || {};
+  const chips = [label, run.engine, run.date, run.mode === "deep" ? "Deep research" : "Quick answer",
+    `${run.sources} sources`, usage.seconds ? `${usage.seconds}s` : "",
+    run.audit_issues ? `${run.audit_issues} audit flags` : ""].filter(Boolean);
+  return `<div class="cmp-col">
+    <h2>${esc(label)}</h2>
+    <div class="cmp-stats">${chips.slice(1).map((c) => `<span class="badge">${esc(c)}</span>`).join("")}</div>
+    <div class="lead">${md(run.lead)}</div>
+    <div style="margin-top:10px"><a class="btn small" href="#${esc(run.thread_id)}">Open this run</a></div>
+  </div>`;
+}
+
+function refList(refs, empty) {
+  if (!refs.length) return `<div class="empty">${esc(empty)}</div>`;
+  return `<ul class="cmp-refs">${refs.map((r) => `<li><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.title || r.key)}</a>
+    <span class="badge">${esc(r.design || r.key)}</span></li>`).join("")}</ul>`;
+}
+
+async function openCompare(a, b) {
+  $("#home").hidden = true;
+  $("#thread").hidden = true;
+  const panel = $("#compare");
+  panel.hidden = false;
+  panel.innerHTML = `<div class="live"><span class="spin"></span>Comparing the two runs…</div>`;
+  toggleOutline(false);
+  let data;
+  try {
+    data = await api(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+  } catch (err) {
+    panel.innerHTML = `<div class="banner bad">${esc(err.message)}</div>`;
+    return;
+  }
+  const { runs, sources } = data;
+  const pct = Math.round(sources.overlap * 100);
+  panel.innerHTML = `
+    <div class="cmp-head">
+      <h1>Two runs of the same question</h1>
+      <p class="lede">${esc(runs.a.question)}</p>
+      ${data.same_question ? "" : `<div class="banner warn">These runs answered different questions, so treat the comparison loosely.</div>`}
+    </div>
+    <div class="cmp-grid">${runColumn(runs.a, "First run")}${runColumn(runs.b, "Second run")}</div>
+
+    <div class="cmp-section">
+      <h2>Sources</h2>
+      <div class="overlap">
+        <span><b>${sources.shared}</b> found by both</span>
+        <span class="overlap-bar"><i style="width:${pct}%"></i></span>
+        <span>${pct}% overlap</span>
+      </div>
+      <div class="cmp-grid">
+        <div class="cmp-col"><h2>Only the first run (${sources.only_a.length})</h2>${refList(sources.only_a.slice(0, 25), "Nothing unique to this run.")}</div>
+        <div class="cmp-col"><h2>Only the second run (${sources.only_b.length})</h2>${refList(sources.only_b.slice(0, 25), "Nothing unique to this run.")}</div>
+      </div>
+    </div>
+
+    <div class="cmp-section" id="cmp-diff">
+      <h2>What they actually say</h2>
+      <p class="hint">Comparing the conclusions needs a model pass over both reports, which costs a little.</p>
+      <button class="btn primary" id="cmp-run" data-a="${esc(a)}" data-b="${esc(b)}">Compare the conclusions</button>
+    </div>`;
+  history.replaceState(null, "", `#compare=${a},${b}`);
+}
+
+$("#compare").addEventListener("click", async (e) => {
+  const run = e.target.closest("#cmp-run");
+  if (!run) return;
+  const target = $("#cmp-diff");
+  target.innerHTML = `<h2>What they actually say</h2><div class="live"><span class="spin"></span>Reading both reports…</div>`;
+  try {
+    const d = await api(`/api/compare/summary?a=${encodeURIComponent(run.dataset.a)}&b=${encodeURIComponent(run.dataset.b)}`, { method: "POST" });
+    target.innerHTML = `<h2>What they actually say</h2>
+      <div class="banner" style="background:var(--accent-soft);color:var(--accent)">${esc(d.verdict)}</div>
+      ${d.disagreements.length ? `<h3>Disagreements</h3>` + d.disagreements.map((x) => `
+        <div class="diff">
+          <h3>${esc(x.topic)} <span class="sev ${esc(x.severity)}">${esc(SEVERITY[x.severity] || x.severity)}</span></h3>
+          <div class="side"><b>First run:</b> ${esc(x.run_a)}</div>
+          <div class="side"><b>Second run:</b> ${esc(x.run_b)}</div>
+        </div>`).join("") : `<div class="banner" style="background:var(--good-soft);color:var(--good)">No disagreements found between the two runs.</div>`}
+      ${d.agreements.length ? `<h3>Both runs agree</h3><ul class="cmp-refs">${d.agreements.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${d.coverage.length ? `<h3>Covered by only one</h3><ul class="cmp-refs">${d.coverage.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+      ${d.cost_usd != null ? `<p class="hint">This comparison cost ≈ $${d.cost_usd.toFixed(2)} API-equivalent.</p>` : ""}`;
+  } catch (err) {
+    target.innerHTML = `<h2>What they actually say</h2><div class="banner bad">${esc(err.message)}</div>`;
   }
 });
 
@@ -779,7 +885,11 @@ $("#turns").addEventListener("mouseout", (e) => { if (e.target.closest("a.cite")
 // ------------------------------------------------------------------ boot
 
 syncHint();
-if (location.hash.length > 1) openThread(location.hash.slice(1)).catch(showHome);
+const hash = location.hash.slice(1);
+if (hash.startsWith("compare=")) {
+  const [a, b] = hash.slice(8).split(",");
+  openCompare(a, b);
+} else if (hash) openThread(hash).catch(showHome);
 else loadHistory();
 api("/api/health").then((h) => {
   const engine = h.third_party ? `${h.model} via ${new URL(h.base_url).host}` : h.model;

@@ -82,6 +82,7 @@ def registry_for(thread: dict[str, Any]) -> Registry:
 
 def public(thread: dict[str, Any]) -> dict[str, Any]:
     out = {k: v for k, v in thread.items() if k not in ("registry", "session_id", "session_cost", "entities")}
+    out["compare_of"] = thread.get("compare_of")
     for turn in out["turns"]:
         turn["live"] = turn["id"] in runs and not runs[turn["id"]].done
         if turn["status"] == "running" and not turn["live"]:
@@ -106,6 +107,7 @@ async def execute(thread: dict[str, Any], turn: dict[str, Any], run: Run, want_a
             registry, emit, turn["question"], mode=turn["mode"], hypotheses=turn["hypotheses"],
             session_id=thread.get("session_id"), year_from=turn.get("year_from"), year_to=turn.get("year_to"),
         )
+        turn["engine"] = agent.engine()["model"]
         thread["session_id"] = result["session_id"]
         # A resumed session reports its running total, so charge this turn only the difference.
         total = result["usage"]["cost_usd"]
@@ -157,6 +159,7 @@ class ResearchRequest(BaseModel):
     year_from: int | None = Field(default=None, ge=1800, le=2100)
     year_to: int | None = Field(default=None, ge=1800, le=2100)
     thread_id: str | None = None
+    compare_of: str | None = None
 
 
 @app.post("/api/research")
@@ -166,8 +169,10 @@ async def start_research(req: ResearchRequest) -> dict[str, str]:
         if any(t["id"] in runs and not runs[t["id"]].done for t in thread["turns"]):
             raise HTTPException(409, "This thread already has a run in progress.")
     else:
-        thread = {"id": uuid.uuid4().hex[:12], "title": req.question.strip()[:120], "created": time.time(),
-                  "session_id": None, "turns": []}
+        title = req.question.strip()[:120]
+        thread = {"id": uuid.uuid4().hex[:12], "title": f"Re-run · {title}" if req.compare_of else title,
+                  "created": time.time(), "session_id": None, "turns": [],
+                  "compare_of": req.compare_of}
     turn = {
         "id": uuid.uuid4().hex[:12], "question": req.question.strip(), "mode": req.mode, "hypotheses": req.hypotheses,
         "year_from": req.year_from, "year_to": req.year_to, "status": "running", "started": time.time(),
@@ -294,6 +299,112 @@ async def export_turn(request: Request, thread_id: str, turn_id: str, format: st
     slug = re.sub(r"[^a-z0-9]+", "-", turn["question"].lower())[:50].strip("-") or "research"
     return Response(content=body, media_type=media_type,
                     headers={"Content-Disposition": f'attachment; filename="{slug}.{ext}"'})
+
+
+# ----------------------------------------------------------------------------- comparing runs
+
+def first_turn(thread: dict[str, Any]) -> dict[str, Any]:
+    done = [t for t in thread["turns"] if t["status"] == "done"]
+    if not done:
+        raise HTTPException(409, "That run has no finished answer to compare.")
+    return done[0]
+
+
+LEAD_CHARS = 2000
+
+
+def _trim(text: str) -> str:
+    """Cut at a paragraph or sentence boundary, so Markdown is never left half-open."""
+    if len(text) <= LEAD_CHARS:
+        return text
+    head = text[:LEAD_CHARS]
+    for boundary in ("\n\n", ". ", "\n"):
+        cut = head.rfind(boundary)
+        if cut > LEAD_CHARS // 2:
+            return head[:cut + (1 if boundary == ". " else 0)].rstrip() + "\n\n…"
+    return head.rstrip() + "…"
+
+
+def lead_section(report: str) -> str:
+    """The report's opening section — its bottom line — for a side-by-side view."""
+    body = export.split_title({"report": report, "question": ""})[1]
+    parts = re.split(r"^## ", body, flags=re.M)
+    for part in parts[1:]:
+        text = part.split("\n", 1)[1].strip() if "\n" in part else ""
+        if len(text) > 120:
+            return _trim(text)
+    return _trim(body)
+
+
+@app.post("/api/threads/{thread_id}/rerun")
+async def rerun(thread_id: str) -> dict[str, str]:
+    """Ask the same question again in a fresh session, for comparison."""
+    source = load_thread(thread_id)
+    turn = first_turn(source)
+    # compare_of is set as the thread is created: the run task holds its own copy of the
+    # thread and would overwrite a field written after it started.
+    return await start_research(ResearchRequest(
+        question=turn["question"], mode=turn["mode"], hypotheses=turn["hypotheses"],
+        audit=bool(turn.get("audit")), year_from=turn.get("year_from"), year_to=turn.get("year_to"),
+        compare_of=thread_id,
+    ))
+
+
+@app.get("/api/compare")
+async def compare(a: str, b: str) -> dict[str, Any]:
+    """What two runs of the same question found, and where their sources differ."""
+    threads = {key: load_thread(ident) for key, ident in (("a", a), ("b", b))}
+    runs = {}
+    for key, thread in threads.items():
+        turn = first_turn(thread)
+        runs[key] = {
+            "thread_id": thread["id"], "turn_id": turn["id"], "question": turn["question"],
+            "engine": turn.get("engine") or "unrecorded", "mode": turn["mode"],
+            "date": time.strftime("%Y-%m-%d %H:%M", time.localtime(turn["started"])),
+            "sources": len(turn["references"]), "usage": turn.get("usage"),
+            "lead": lead_section(turn["report"]),
+            "audit_issues": len((turn.get("audit") or {}).get("issues") or []),
+            "problems": len(turn.get("problems") or []),
+        }
+
+    def by_key(thread: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        return {r["key"]: r for r in first_turn(thread)["references"]}
+
+    refs_a, refs_b = by_key(threads["a"]), by_key(threads["b"])
+    shared = sorted(set(refs_a) & set(refs_b))
+    union = set(refs_a) | set(refs_b)
+
+    def listing(refs: dict[str, dict[str, Any]], keys: list[str]) -> list[dict[str, Any]]:
+        return [{"key": k, "title": refs[k]["title"], "year": refs[k]["year"],
+                 "design": refs[k].get("design"), "url": refs[k]["url"]} for k in keys]
+
+    return {
+        "same_question": runs["a"]["question"].strip() == runs["b"]["question"].strip(),
+        "runs": runs,
+        "sources": {
+            "shared": len(shared),
+            "overlap": round(len(shared) / len(union), 3) if union else 0.0,
+            "only_a": listing(refs_a, sorted(set(refs_a) - set(refs_b))),
+            "only_b": listing(refs_b, sorted(set(refs_b) - set(refs_a))),
+            "shared_sample": listing(refs_a, shared[:12]),
+        },
+    }
+
+
+@app.post("/api/compare/summary")
+async def compare_summary(a: str, b: str) -> dict[str, Any]:
+    """A model pass over both reports: agreements, real disagreements, coverage gaps."""
+    pair = []
+    for ident in (a, b):
+        thread = load_thread(ident)
+        turn = first_turn(thread)
+        pair.append({"engine": turn.get("engine") or "unrecorded",
+                     "date": time.strftime("%Y-%m-%d", time.localtime(turn["started"])),
+                     "sources": len(turn["references"]), "report": turn["report"]})
+    try:
+        return await agent.compare(pair[0], pair[1])
+    except agent.ResearchError as exc:
+        raise HTTPException(503, str(exc)) from exc
 
 
 ENTITY_CACHE_VERSION = 3

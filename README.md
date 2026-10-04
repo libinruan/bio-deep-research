@@ -56,6 +56,19 @@ Caveats worth knowing:
 
 Follow-up questions in a thread reuse everything already retrieved.
 
+### Comparing two runs
+
+**Run again** at the foot of a finished answer asks the same question in a fresh session.
+The comparison view then puts the two side by side: their engines, dates and costs, how
+much their sources overlap, and which papers only one of them found. **Compare the
+conclusions** adds a model pass that reports where they agree, where they genuinely
+disagree, and what one covered that the other missed, marking each difference as
+substantive, emphasis, or wording only.
+
+This is the honest way to judge a model or a provider. Switching `BDR_BASE_URL` between runs
+compares two engines on the same question; running the same question months apart shows what
+the literature has added since.
+
 ### Reading and exporting an answer
 
 A deep report runs to several thousand words, so each answer has an **Outline** built from

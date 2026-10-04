@@ -198,6 +198,41 @@ async def research(
     }
 
 
+async def _structured(system: str, prompt: str, schema: dict[str, Any], effort: str = "medium") -> dict[str, Any]:
+    """One tool-free pass that must come back as JSON matching `schema`."""
+    options = ClaudeAgentOptions(
+        system_prompt=system, model=None if THIRD_PARTY else MODEL,
+        effort=None if THIRD_PARTY else effort,
+        cwd=str(AGENT_HOME), setting_sources=[], tools=[], permission_mode="dontAsk",
+        env=_engine_env(), max_turns=6,
+        output_format=None if THIRD_PARTY else {"type": "json_schema", "schema": schema},
+    )
+    if THIRD_PARTY:
+        prompt += ("\n\nReply with JSON only, no prose and no code fence, matching this schema:\n"
+                   + json.dumps(schema))
+    final: ResultMessage | None = None
+    async for msg in query(prompt=prompt, options=options):
+        if isinstance(msg, ResultMessage):
+            final = msg
+    if final is None:
+        raise ResearchError("The model returned no result.")
+    if final.is_error:
+        raise ResearchError(_error_text(final))
+    out = final.structured_output
+    if out is None and final.result:
+        out = _loads(final.result)
+    if not isinstance(out, dict):
+        raise ResearchError("The model returned no structured result.")
+    out["cost_usd"] = final.total_cost_usd
+    return out
+
+
+async def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> dict[str, Any]:
+    """Where two runs of the same question agree, differ, and cover different ground."""
+    return await _structured(prompts.COMPARE_SYSTEM, prompts.compare_prompt(run_a, run_b),
+                             prompts.COMPARE_SCHEMA, effort="high")
+
+
 def _loads(text: str) -> Any:
     """Parse JSON that may arrive wrapped in prose or a code fence."""
     try:

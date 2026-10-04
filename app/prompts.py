@@ -177,3 +177,51 @@ def user_prompt(question: str, mode: str, hypotheses: bool, follow_up: bool,
     if hypotheses:
         parts.append(HYPOTHESES)
     return "\n\n".join(parts)
+
+
+COMPARE_SYSTEM = """You compare two independent literature reviews that answered the same \
+biomedical question, possibly written by different models or at different times. The reader \
+wants to know whether they can rely on the answer, so your job is to find where the two runs \
+agree, where they genuinely disagree, and what one covered that the other missed.
+
+Judge substance, not wording. Two reports saying the same thing in different words agree. A \
+real disagreement is a different conclusion, a different effect size or number, a different \
+reading of how strong the evidence is, or a claim one makes that the other contradicts.
+
+Quote the specific figures involved when they differ. Where one report cites a source the \
+other did not, say whether that looks like it changed the conclusion. Do not assume the \
+longer report is the better one, and do not invent differences to fill the list: two careful \
+reviews of the same literature often agree, and saying so plainly is a useful result."""
+
+COMPARE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "description": "Two or three sentences: do these runs tell the same story, and would a reader act differently on one versus the other?"},
+        "agreements": {"type": "array", "items": {"type": "string"}, "description": "Substantive conclusions both runs reached."},
+        "disagreements": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string"},
+                    "run_a": {"type": "string", "description": "What the first run says, with its numbers."},
+                    "run_b": {"type": "string", "description": "What the second run says, with its numbers."},
+                    "severity": {"type": "string", "enum": ["wording", "emphasis", "substantive"]},
+                },
+                "required": ["topic", "run_a", "run_b", "severity"],
+                "additionalProperties": False,
+            },
+        },
+        "coverage": {"type": "array", "items": {"type": "string"}, "description": "Topics or evidence one run covered and the other did not, and whether that mattered."},
+    },
+    "required": ["verdict", "agreements", "disagreements", "coverage"],
+    "additionalProperties": False,
+}
+
+
+def compare_prompt(a: dict, b: dict) -> str:
+    def block(tag: str, run: dict) -> str:
+        return (f"<{tag} engine=\"{run['engine']}\" date=\"{run['date']}\" sources=\"{run['sources']}\">\n"
+                f"{run['report']}\n</{tag}>")
+    return (f"{block('run_a', a)}\n\n{block('run_b', b)}\n\n"
+            "Compare these two runs.")
