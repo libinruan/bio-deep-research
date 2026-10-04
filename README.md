@@ -18,6 +18,33 @@ are in `.env.example`.
 
 To rebuild the environment from scratch: `conda env create -p ./.conda -f environment.yml`.
 
+### Using another model provider
+
+The app talks to its model through an Anthropic-compatible endpoint, so providers that offer
+one — Kimi (Moonshot), GLM (Z.ai), or a local translation proxy in front of an OpenAI-only
+model — can be used instead of Claude. Set three variables in `.env`:
+
+```bash
+BDR_BASE_URL=https://api.z.ai/api/anthropic   # or https://api.moonshot.ai/anthropic
+BDR_MODEL=glm-5.2                             # or kimi-k3[1m]
+BDR_AUTH_TOKEN=...                            # that provider's API key
+```
+
+Setting `BDR_BASE_URL` changes three things automatically: every model tier is pinned to
+`BDR_MODEL` (background work otherwise asks the endpoint for a Claude model it does not
+serve), the Claude-only `effort` setting is dropped, and the audit stops relying on enforced
+JSON schemas, asking for JSON in the prompt instead. The sidebar footer shows the active engine.
+
+Caveats worth knowing:
+
+- Anthropic does not support routing this harness to non-Claude models, so treat it as
+  best-effort. Skills, the literature tools, the read-confinement hook and citation
+  verification are all client-side and keep working.
+- Deep research is the demanding case: 30 or more tool calls across many turns with a long
+  context. Re-check report quality after switching rather than assuming parity.
+- This path is wired and the request routing is verified, but it has not been run end to end
+  against a real third-party key.
+
 ## What it does
 
 | Mode | What happens | Typical time |
