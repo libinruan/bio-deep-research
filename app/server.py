@@ -15,8 +15,9 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, export
+from . import agent, entities, export
 from .registry import Registry
+from .sources import SourceError
 
 ROOT = Path(__file__).resolve().parent.parent
 THREADS = ROOT / "data" / "threads"
@@ -80,7 +81,7 @@ def registry_for(thread: dict[str, Any]) -> Registry:
 
 
 def public(thread: dict[str, Any]) -> dict[str, Any]:
-    out = {k: v for k, v in thread.items() if k not in ("registry", "session_id", "session_cost")}
+    out = {k: v for k, v in thread.items() if k not in ("registry", "session_id", "session_cost", "entities")}
     for turn in out["turns"]:
         turn["live"] = turn["id"] in runs and not runs[turn["id"]].done
         if turn["status"] == "running" and not turn["live"]:
@@ -293,6 +294,27 @@ async def export_turn(request: Request, thread_id: str, turn_id: str, format: st
     slug = re.sub(r"[^a-z0-9]+", "-", turn["question"].lower())[:50].strip("-") or "research"
     return Response(content=body, media_type=media_type,
                     headers={"Content-Disposition": f'attachment; filename="{slug}.{ext}"'})
+
+
+ENTITY_CACHE_VERSION = 3
+
+
+@app.get("/api/threads/{thread_id}/entities")
+async def thread_entities(thread_id: str) -> dict[str, Any]:
+    """Genes, drugs and variants named in the papers this thread retrieved."""
+    thread = load_thread(thread_id)
+    cached = thread.get("entities")
+    if cached and cached.get("version") == ENTITY_CACHE_VERSION:
+        return cached
+    pmids = [r["pmid"] for r in (thread.get("registry") or {}).get("records", []) if r.get("pmid")]
+    try:
+        built = await entities.build(pmids)
+    except SourceError as exc:
+        raise HTTPException(503, f"Entity lookup failed: {exc}") from exc
+    built["version"] = ENTITY_CACHE_VERSION
+    thread["entities"] = built
+    save_thread(thread)
+    return built
 
 
 @app.get("/api/health")

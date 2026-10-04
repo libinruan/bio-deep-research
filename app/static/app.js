@@ -129,6 +129,7 @@ async function openThread(id) {
   }
   syncFollow();
   loadHistory();
+  loadEntities(id);
 }
 
 function syncFollow() {
@@ -319,6 +320,7 @@ function renderTurn(turn) {
   });
   el.querySelectorAll(".report a:not(.cite)").forEach((a) => { a.target = "_blank"; a.rel = "noopener"; });
   markSections(el);
+  markEntities(turn);
   scheduleOutline();
 }
 
@@ -524,6 +526,127 @@ $("#turns").addEventListener("click", (e) => {
   } else if (stop) {
     stop.disabled = true; stop.textContent = "Stopping…";
     api(`/api/runs/${turn.id}/cancel`, { method: "POST" });
+  }
+});
+
+// ------------------------------------------------------------------ entities
+
+const ENTITY_PREF = "bdr.entities";
+let entityOn = store.get(ENTITY_PREF, "1") === "1";
+let entityByForm = new Map();
+let entityRe = null;
+const entcard = $("#entcard");
+
+async function loadEntities(threadId) {
+  entityByForm = new Map();
+  entityRe = null;
+  try {
+    const data = await api(`/api/threads/${threadId}/entities`);
+    for (const entity of data.entities) {
+      for (const form of entity.forms) entityByForm.set(form.toLowerCase(), entity);
+    }
+    const forms = [...entityByForm.keys()].sort((a, b) => b.length - a.length);
+    if (forms.length) {
+      const alternation = forms.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+      entityRe = new RegExp(`\\b(?:${alternation})\\b`, "gi");
+    }
+    if (current && current.id === threadId) current.turns.forEach(markEntities);
+  } catch {
+    // The annotation service is optional; reading the report must not depend on it.
+  }
+}
+
+function markEntities(turn) {
+  if (!entityOn || !entityRe) return;
+  const report = document.querySelector(`#turn-${turn.id} .report`);
+  if (!report || report.dataset.entities === "done") return;
+  report.dataset.entities = "done";
+
+  const walker = document.createTreeWalker(report, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (!node.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+      return node.parentElement.closest("a, code, pre, .entity")
+        ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+
+  for (const node of nodes) {
+    const text = node.nodeValue;
+    entityRe.lastIndex = 0;
+    let match = entityRe.exec(text);
+    if (!match) continue;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    while (match) {
+      const entity = entityByForm.get(match[0].toLowerCase());
+      if (entity) {
+        frag.append(text.slice(last, match.index));
+        const span = document.createElement("span");
+        span.className = `entity${entity.checked ? "" : " unchecked"}`;
+        span.dataset.key = match[0].toLowerCase();
+        span.textContent = match[0];
+        frag.append(span);
+        last = match.index + match[0].length;
+      }
+      match = entityRe.exec(text);
+    }
+    frag.append(text.slice(last));
+    node.replaceWith(frag);
+  }
+}
+
+function clearEntities() {
+  for (const span of document.querySelectorAll("span.entity")) {
+    span.replaceWith(document.createTextNode(span.textContent));
+  }
+  for (const report of document.querySelectorAll(".report")) delete report.dataset.entities;
+  entcard.hidden = true;
+}
+
+function entityCardHTML(entity) {
+  const note = entity.checked
+    ? `<div class="note ok">${esc(entity.note || "Name and identifier agree.")}</div>`
+    : `<div class="note">${esc(entity.note)}</div>`;
+  return `<div class="kind">${esc(entity.label)} · ${esc(entity.id.slice(0, 40))}</div>
+    <div class="name">${esc(entity.name)}</div>
+    ${entity.description ? `<div class="desc">${esc(entity.description)}</div>` : ""}
+    ${note}
+    ${entity.url ? `<a href="${esc(entity.url)}" target="_blank" rel="noopener">Open reference record</a>` : ""}`;
+}
+
+let entityTimer = null;
+$("#turns").addEventListener("mouseover", (e) => {
+  const span = e.target.closest("span.entity");
+  if (!span) return;
+  clearTimeout(entityTimer);
+  entityTimer = setTimeout(() => {
+    const entity = entityByForm.get(span.dataset.key);
+    if (!entity) return;
+    entcard.innerHTML = entityCardHTML(entity);
+    entcard.hidden = false;
+    place(entcard, span);
+  }, 140);
+});
+$("#turns").addEventListener("mouseout", (e) => {
+  if (!e.target.closest("span.entity")) return;
+  clearTimeout(entityTimer);
+  entityTimer = setTimeout(() => {
+    if (!entcard.matches(":hover")) entcard.hidden = true;
+  }, 260);
+});
+entcard.addEventListener("mouseleave", () => { entcard.hidden = true; });
+
+const entityToggle = $("#entity-toggle");
+entityToggle.checked = entityOn;
+entityToggle.addEventListener("change", (e) => {
+  entityOn = e.target.checked;
+  store.set(ENTITY_PREF, entityOn ? "1" : "0");
+  if (entityOn) {
+    if (current) current.turns.forEach(markEntities);
+  } else {
+    clearEntities();
   }
 });
 

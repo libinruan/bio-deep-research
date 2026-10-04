@@ -65,6 +65,13 @@ outline, <kbd>⌘K</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> to open it with the filt
 itself for long answers; the dropdown at its foot changes that to always or never. The same
 outline is also a tab beside Sources.
 
+Genes, drugs and variants named in the retrieved papers are marked in the report, and
+hovering one shows what it resolves to and links to the reference record. The vocabulary is
+not guessed from the text: it comes from PubTator3's annotation of the cited abstracts, and
+every gene is checked against NCBI's own record before it is offered as a link. A dashed
+underline means the mapping could not be corroborated, and the card says so. The checkbox in
+the sidebar turns the marking off.
+
 Clicking a citation opens **Where this comes from**: the claim it is attached to, the source
 it points at, and the passages of that source closest to the claim, with the shared wording
 highlighted. The match is lexical, weighted towards shared numbers — effect sizes, sample
