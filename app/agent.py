@@ -26,8 +26,40 @@ ROOT = Path(__file__).resolve().parent.parent
 AGENT_HOME = ROOT / "agent_home"  # the agent's working directory; holds .claude/skills
 SKILLS_DIR = AGENT_HOME / ".claude" / "skills"
 
-MODEL = os.environ.get("BDR_MODEL", "claude-opus-5-5")
+# A third-party Anthropic-compatible endpoint (Moonshot/Kimi, Z.ai/GLM, a local proxy) can be
+# used instead of Claude by setting BDR_BASE_URL. Everything the harness does — skills, tools,
+# hooks — is client-side and keeps working; only model-specific request fields are dropped.
+BASE_URL = os.environ.get("BDR_BASE_URL", "").strip()
+THIRD_PARTY = bool(BASE_URL)
+MODEL = os.environ.get("BDR_MODEL") or ("" if THIRD_PARTY else "claude-opus-5-5")
 EFFORT = {"quick": os.environ.get("BDR_EFFORT_QUICK", "medium"), "deep": os.environ.get("BDR_EFFORT_DEEP", "high")}
+
+
+def _engine_env() -> dict[str, str]:
+    """Environment for the Claude Code subprocess, pointing it at another provider if asked."""
+    if not THIRD_PARTY:
+        return {}
+    env = {"ANTHROPIC_BASE_URL": BASE_URL}
+    token = os.environ.get("BDR_AUTH_TOKEN", "").strip()
+    if token:
+        env["ANTHROPIC_AUTH_TOKEN"] = token
+    if MODEL:
+        # Through the environment, not the model option, which Claude Code checks against
+        # its own model list. Every tier is pinned: background work (session titles and the
+        # like) otherwise asks the endpoint for a Claude model it does not serve.
+        for var in ("ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL",
+                    "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL"):
+            env[var] = MODEL
+    # Request features third-party endpoints generally reject. Both variables exist in
+    # Claude Code 2.1.288; their effect on these endpoints is not verified here.
+    env.setdefault("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", "1")
+    env.setdefault("ENABLE_TOOL_SEARCH", "false")
+    return env
+
+
+def engine() -> dict[str, Any]:
+    return {"model": MODEL or "(endpoint default)", "base_url": BASE_URL or "Anthropic (Claude Code login)",
+            "third_party": THIRD_PARTY}
 
 Emit = Callable[[dict[str, Any]], None]
 
@@ -71,7 +103,8 @@ ERROR_HELP = {
     "billing_error": "Your Claude account could not be billed for this request (out of credit, or no active plan).",
     "rate_limit": "Your Claude usage limit was reached. Wait for the limit to reset, or try a quick search instead of deep research.",
     "invalid_request": "Claude rejected the request itself. The most common causes are a question the model's safety filters declined to work on, and a conversation that has grown too large to send.",
-    "server_error": "Claude had a server-side error. This is usually temporary; try again.",
+    "server_error": "The model provider had a server-side error. This is usually temporary; try again.",
+    "model_not_found": "The configured model id was not recognised. Check BDR_MODEL against the provider's documentation.",
     "unknown": "Claude returned an unspecified error.",
 }
 
@@ -105,8 +138,8 @@ async def research(
 
     options = ClaudeAgentOptions(
         system_prompt=prompts.system_prompt(),
-        model=MODEL,
-        effort=EFFORT.get(mode, "medium"),
+        model=None if THIRD_PARTY else MODEL,
+        effort=None if THIRD_PARTY else EFFORT.get(mode, "medium"),
         cwd=str(AGENT_HOME),
         setting_sources=["project"],
         skills=skill_names(),
@@ -116,6 +149,7 @@ async def research(
         mcp_servers={SERVER: server},
         hooks={"PreToolUse": [HookMatcher(matcher="Read", hooks=[_confine_reads])]},
         include_partial_messages=True,
+        env=_engine_env(),
         stderr=capture,
         resume=session_id,
         max_turns=120 if mode == "deep" else 40,
@@ -164,6 +198,21 @@ async def research(
     }
 
 
+def _loads(text: str) -> Any:
+    """Parse JSON that may arrive wrapped in prose or a code fence."""
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    start, end = text.find("{"), text.rfind("}")
+    if start == -1 or end <= start:
+        raise ResearchError("The audit did not return JSON.")
+    try:
+        return json.loads(text[start:end + 1])
+    except json.JSONDecodeError as exc:
+        raise ResearchError(f"The audit returned malformed JSON ({exc}).") from exc
+
+
 async def audit(registry: Registry, report: str) -> dict[str, Any]:
     """Second pass: an independent check of each citation against the record it points to."""
     cited: dict[str, dict[str, Any]] = {}
@@ -182,12 +231,17 @@ async def audit(registry: Registry, report: str) -> dict[str, Any]:
             "/".join(rec.get("species") or []), "full text was read" if rec.get("full_text_read") else "abstract only",
         ) if f)
         blocks.append(f'<source id="{key}">\nTitle: {rec.get("title")}\nFlags: {flags}\n{rec.get("abstract") or "(no abstract)"}\n</source>')
-    prompt = f"<report>\n{report}\n</report>\n\n<sources>\n" + "\n\n".join(blocks) + "\n</sources>\n\nAudit the citations."
+    ask = "Audit the citations."
+    if THIRD_PARTY:  # no schema enforcement on this endpoint, so state the shape
+        ask += (" Reply with JSON only, no prose and no code fence, matching this schema:\n"
+                + json.dumps(prompts.AUDIT_SCHEMA))
+    prompt = f"<report>\n{report}\n</report>\n\n<sources>\n" + "\n\n".join(blocks) + f"\n</sources>\n\n{ask}"
 
     options = ClaudeAgentOptions(
-        system_prompt=prompts.AUDIT_SYSTEM, model=MODEL, effort="medium",
+        system_prompt=prompts.AUDIT_SYSTEM, model=None if THIRD_PARTY else MODEL, effort=None if THIRD_PARTY else "medium",
         cwd=str(AGENT_HOME), setting_sources=[], tools=[], permission_mode="dontAsk",
-        output_format={"type": "json_schema", "schema": prompts.AUDIT_SCHEMA}, max_turns=6,
+        env=_engine_env(), max_turns=6,
+        output_format=None if THIRD_PARTY else {"type": "json_schema", "schema": prompts.AUDIT_SCHEMA},
     )
     final: ResultMessage | None = None
     async for msg in query(prompt=prompt, options=options):
@@ -199,7 +253,7 @@ async def audit(registry: Registry, report: str) -> dict[str, Any]:
         raise ResearchError(_error_text(final))
     out = final.structured_output
     if out is None and final.result:
-        out = json.loads(final.result)
+        out = _loads(final.result)
     if not isinstance(out, dict):
         raise ResearchError("The audit returned no structured result.")
     out["cost_usd"] = final.total_cost_usd

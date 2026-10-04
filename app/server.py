@@ -285,7 +285,7 @@ async def export_turn(thread_id: str, turn_id: str, format: str = "md") -> Plain
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
-    return {"model": agent.MODEL, "skills": agent.skill_names(),
+    return {**agent.engine(), "skills": agent.skill_names(),
             "sources": ["PubMed", "Europe PMC", "OpenAlex", "ClinicalTrials.gov"]}
 
 

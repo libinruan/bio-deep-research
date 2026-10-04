@@ -344,5 +344,6 @@ syncHint();
 if (location.hash.length > 1) openThread(location.hash.slice(1)).catch(showHome);
 else loadHistory();
 api("/api/health").then((h) => {
-  $("#health").textContent = `${h.model} · ${h.skills.length} skills · ${h.sources.join(", ")}`;
+  const engine = h.third_party ? `${h.model} via ${new URL(h.base_url).host}` : h.model;
+  $("#health").textContent = `${engine} · ${h.skills.length} skills · ${h.sources.join(", ")}`;
 }).catch(() => {});
