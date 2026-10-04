@@ -71,12 +71,11 @@ the literature has added since.
 
 ### Reading and exporting an answer
 
-A deep report runs to several thousand words, so each answer has an **Outline** built from
-its headings and bold paragraph lead-ins. Press <kbd>O</kbd> to show or hide the floating
-outline, <kbd>⌘K</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> to open it with the filter focused, and
-<kbd>Esc</kbd> to close it. It tracks the section you are reading and, by default, opens
-itself for long answers; the dropdown at its foot changes that to always or never. The same
-outline is also a tab beside Sources.
+A deep report runs to several thousand words, so the **Outline** tab beside Sources lists its
+headings and bold paragraph lead-ins, filters them by name, and marks the section you are
+reading. Press <kbd>O</kbd> to open it for whichever answer is in view and again to go back
+to Sources, or <kbd>⌘K</kbd> / <kbd>Ctrl</kbd>+<kbd>K</kbd> to open it with the filter
+focused.
 
 Genes, drugs and variants named in the retrieved papers are marked in the report, and
 hovering one shows what it resolves to and links to the reference record. The vocabulary is

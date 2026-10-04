@@ -65,8 +65,6 @@ $("#history").addEventListener("click", async (e) => {
 
 function showHome() {
   current = null;
-  outlineTurnId = null;
-  toggleOutline(false);
   history.replaceState(null, "", location.pathname);
   $("#home").hidden = false; $("#thread").hidden = true; $("#compare").hidden = true;
   $("#question").focus();
@@ -330,12 +328,7 @@ function renderTurn(turn) {
 
 // ------------------------------------------------------------------ outline
 
-const OUTLINE_PREF = "bdr.outline-pref";
-const LONG_ANSWER_WORDS = 900;
-let outlinePref = store.get(OUTLINE_PREF, "auto");
-let outlineOpen = false;
 let outlineEntries = [];
-let outlineTurnId = null;
 
 // Headings, plus the bold lead-ins the reports use to open a paragraph.
 function markSections(turnEl) {
@@ -367,6 +360,11 @@ function activeTurnEl() {
   }, null);
 }
 
+function activeTurn() {
+  const el = activeTurnEl();
+  return el && current ? current.turns.find((t) => `turn-${t.id}` === el.id) : null;
+}
+
 function readOutline(turnEl) {
   if (!turnEl) return [];
   return [...turnEl.querySelectorAll("[data-outline]")].map((el) => ({
@@ -395,46 +393,30 @@ function outlineListHTML(entries, filter = "") {
 
 function outlinePane(turn) {
   const entries = readOutline(document.getElementById(`turn-${turn.id}`));
+  outlineEntries = entries;  // so the current section is marked on this first render too
   if (!entries.length) {
     return `<div class="empty">${turn.status === "running" ? "Sections appear as the answer is written." : "This answer has no headings to navigate."}</div>`;
   }
-  return `<nav class="outline-list">${outlineListHTML(entries)}</nav>`;
+  return `<input class="outline-filter" type="search" placeholder="Filter sections…" aria-label="Filter sections">
+    <nav class="outline-list">${outlineListHTML(entries)}</nav>`;
 }
 
+// Keep the current section marked while reading, without re-rendering the pane.
 let outlineTimer = null;
 function scheduleOutline() {
   if (outlineTimer) return;
   outlineTimer = requestAnimationFrame(() => {
     outlineTimer = null;
-    refreshOutline();
+    const turnEl = activeTurnEl();
+    if (!turnEl) return;
+    outlineEntries = readOutline(turnEl);
+    const list = turnEl.querySelector(".pane .outline-list");
+    if (!list || turnEl.querySelector(".outline-filter")?.value.trim()) return;
+    const here = currentSectionId();
+    for (const link of list.querySelectorAll("a")) {
+      link.classList.toggle("here", link.getAttribute("href") === `#${here}`);
+    }
   });
-}
-
-function refreshOutline() {
-  const turnEl = activeTurnEl();
-  if (!turnEl) return;
-  const changed = turnEl.id !== outlineTurnId;
-  outlineTurnId = turnEl.id;
-  outlineEntries = readOutline(turnEl);
-  if (changed && outlinePref !== "never") autoOpen(turnEl);
-  if (outlineOpen) $("#outline-list").innerHTML = outlineListHTML(outlineEntries, $("#outline-filter").value);
-}
-
-function autoOpen(turnEl) {
-  if (outlineOpen || outlinePref === "never") return;
-  const words = (turnEl.querySelector(".report")?.textContent || "").split(/\s+/).length;
-  if (outlinePref === "always" || words >= LONG_ANSWER_WORDS) toggleOutline(true);
-}
-
-function toggleOutline(open = !outlineOpen, focusFilter = false) {
-  outlineOpen = open;
-  $("#outline").hidden = !open;
-  document.body.classList.toggle("outline-open", open);
-  if (open) {
-    outlineEntries = readOutline(activeTurnEl());
-    $("#outline-list").innerHTML = outlineListHTML(outlineEntries, $("#outline-filter").value);
-    if (focusFilter) $("#outline-filter").select();
-  }
 }
 
 function jumpTo(id) {
@@ -446,39 +428,39 @@ function jumpTo(id) {
   el.classList.add("jumped");
 }
 
-$("#outline-list").addEventListener("click", (e) => {
-  const link = e.target.closest("a");
-  if (!link) return;
-  e.preventDefault();
-  jumpTo(link.getAttribute("href").slice(1));
-});
+// O shows the outline for the answer being read, and toggles back; Cmd/Ctrl+K focuses its filter.
+function showOutline(focusFilter = false) {
+  const turn = activeTurn();
+  if (!turn) return;
+  tabs[turn.id] = (!focusFilter && tabs[turn.id] === "outline") ? "sources" : "outline";
+  renderTurn(turn);
+  if (tabs[turn.id] === "outline") {
+    const pane = document.querySelector(`#turn-${turn.id} .pane`);
+    pane?.scrollIntoView({ block: "nearest" });
+    if (focusFilter) document.querySelector(`#turn-${turn.id} .outline-filter`)?.focus();
+  }
+}
+
 $("#turns").addEventListener("click", (e) => {
   const link = e.target.closest(".pane .outline-list a");
   if (!link) return;
   e.preventDefault();
   jumpTo(link.getAttribute("href").slice(1));
 }, true);
-$("#outline-filter").addEventListener("input", (e) => {
-  $("#outline-list").innerHTML = outlineListHTML(outlineEntries, e.target.value);
-});
-$("#outline-close").addEventListener("click", () => toggleOutline(false));
-const prefSelect = $("#outline-pref");
-prefSelect.value = outlinePref;
-prefSelect.addEventListener("change", (e) => {
-  outlinePref = e.target.value;
-  store.set(OUTLINE_PREF, outlinePref);
+$("#turns").addEventListener("input", (e) => {
+  const box = e.target.closest(".outline-filter");
+  if (!box) return;
+  const list = box.parentElement.querySelector(".outline-list");
+  if (list) list.innerHTML = outlineListHTML(outlineEntries, box.value);
 });
 
 const typing = (el) => el && (el.tagName === "TEXTAREA" || el.tagName === "INPUT" || el.isContentEditable);
 document.addEventListener("keydown", (e) => {
-  if (e.key === "k" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return toggleOutline(true, true); }
-  if (e.key === "Escape") {
-    if (!evidenceBox.hidden) return closeEvidence();
-    if (outlineOpen) return toggleOutline(false);
-  }
+  if (e.key === "k" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return showOutline(true); }
+  if (e.key === "Escape" && !evidenceBox.hidden) return closeEvidence();
   if (e.key.toLowerCase() === "o" && !e.metaKey && !e.ctrlKey && !e.altKey && !typing(e.target)) {
     e.preventDefault();
-    toggleOutline();
+    showOutline();
   }
 });
 window.addEventListener("scroll", scheduleOutline, { passive: true });
@@ -573,7 +555,6 @@ async function openCompare(a, b) {
   const panel = $("#compare");
   panel.hidden = false;
   panel.innerHTML = `<div class="live"><span class="spin"></span>Comparing the two runs…</div>`;
-  toggleOutline(false);
   let data;
   try {
     data = await api(`/api/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
