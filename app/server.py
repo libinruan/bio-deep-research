@@ -428,6 +428,12 @@ async def thread_entities(thread_id: str) -> dict[str, Any]:
     return built
 
 
+@app.get("/api/engine/check")
+async def engine_check() -> dict[str, Any]:
+    """Ask the configured model one trivial question, so a provider setup can be verified."""
+    return await agent.check_engine()
+
+
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     return {**agent.engine(), "skills": agent.skill_names(),

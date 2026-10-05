@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
+import time
 from collections import deque
 from pathlib import Path
 from typing import Any, Callable
@@ -18,7 +20,7 @@ from claude_agent_sdk import (
     query,
 )
 
-from . import prompts
+from . import prompts, sources
 from .registry import CITATION_RE, Registry
 from .tools import SERVER, build_server
 
@@ -228,6 +230,91 @@ async def _structured(system: str, prompt: str, schema: dict[str, Any], effort: 
         raise ResearchError("The model returned no structured result.")
     out["cost_usd"] = final.total_cost_usd
     return out
+
+
+async def _probe_endpoint() -> str:
+    """Ask the configured endpoint directly, to surface the provider's own error.
+
+    The harness retries authentication failures for a long time before giving up, so a wrong
+    key would otherwise look like a timeout. One plain request gets the real answer in a second.
+    """
+    url = BASE_URL.rstrip("/") + "/v1/messages"
+    headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
+    token = os.environ.get("BDR_AUTH_TOKEN", "").strip()
+    if token:  # providers differ on which header they read
+        headers["x-api-key"] = token
+        headers["authorization"] = f"Bearer {token}"
+    body = {"model": MODEL, "max_tokens": 16, "messages": [{"role": "user", "content": "Say OK."}]}
+    try:
+        resp = await sources.client().post(url, json=body, headers=headers, timeout=30.0)
+    except Exception as exc:
+        return f"Could not reach {url} ({type(exc).__name__}: {exc})."
+    if resp.status_code == 200:
+        return ""
+    detail = resp.text[:300]
+    try:
+        payload = resp.json()
+        detail = (payload.get("error") or {}).get("message") or payload.get("message") or detail
+    except ValueError:
+        pass
+    hint = {
+        401: " Check BDR_AUTH_TOKEN, and that the key matches this endpoint and plan.",
+        403: " The key was recognised but not allowed to use this endpoint or model.",
+        404: " Check BDR_BASE_URL — it should be the provider's Anthropic-compatible address.",
+        429: " The provider is rate-limiting or the account is out of credit.",
+    }.get(resp.status_code, "")
+    return f"{url} returned HTTP {resp.status_code}: {detail}{hint}"
+
+
+async def check_engine(timeout: float = 60.0) -> dict[str, Any]:
+    """One trivial exchange, to prove the configured engine answers before a real search."""
+    log: deque[str] = deque(maxlen=60)
+
+    def capture(line: str) -> None:
+        line = line.strip()
+        if line:
+            log.append(line)
+
+    options = ClaudeAgentOptions(
+        system_prompt="Reply with the single word OK and nothing else.",
+        model=None if THIRD_PARTY else MODEL,
+        effort=None if THIRD_PARTY else "low",
+        cwd=str(AGENT_HOME), setting_sources=[], tools=[], permission_mode="dontAsk",
+        env=_engine_env(), max_turns=1, stderr=capture,
+    )
+    started = time.monotonic()
+    reply, failure = "", ""
+
+    if THIRD_PARTY:
+        failure = await _probe_endpoint()
+        if failure:
+            return {**engine(), "ok": False, "reply": "", "error": failure,
+                    "seconds": round(time.monotonic() - started, 1)}
+
+    async def run() -> None:
+        nonlocal reply, failure
+        async for msg in query(prompt="Say OK.", options=options):
+            if isinstance(msg, AssistantMessage):
+                if msg.error:
+                    failure = _assistant_error_text(msg.error, _useful(log))
+                    return
+                reply += "".join(getattr(b, "text", "") for b in msg.content
+                                 if type(b).__name__ == "TextBlock")
+            elif isinstance(msg, ResultMessage) and msg.is_error and not failure:
+                failure = _error_text(msg)
+
+    try:
+        await asyncio.wait_for(run(), timeout=timeout)
+    except asyncio.TimeoutError:
+        failure = (f"The endpoint answered a plain request, but the harness got no reply "
+                   f"within {timeout:.0f}s. The provider may not support everything Claude "
+                   f"Code sends; try another model.")
+    except Exception as exc:  # a transport-level failure never reaches the message stream
+        failure = f"{type(exc).__name__}: {exc}"
+
+    return {**engine(), "ok": not failure and bool(reply.strip()),
+            "reply": reply.strip()[:200], "error": failure,
+            "seconds": round(time.monotonic() - started, 1)}
 
 
 async def compare(run_a: dict[str, Any], run_b: dict[str, Any]) -> dict[str, Any]:

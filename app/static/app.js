@@ -872,6 +872,29 @@ if (hash.startsWith("compare=")) {
   openCompare(a, b);
 } else if (hash) openThread(hash).catch(showHome);
 else loadHistory();
+$("#engine-check").addEventListener("click", async (e) => {
+  const button = e.target;
+  const out = $("#engine-result");
+  button.disabled = true;
+  button.textContent = "Testing…";
+  out.hidden = false;
+  out.className = "engine-result";
+  out.textContent = "Asking the configured model to reply…";
+  try {
+    const r = await api("/api/engine/check");
+    out.className = `engine-result ${r.ok ? "ok" : "bad"}`;
+    out.textContent = r.ok
+      ? `${r.model} answered in ${r.seconds}s. Ready to search.`
+      : r.error;
+  } catch (err) {
+    out.className = "engine-result bad";
+    out.textContent = err.message;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Test connection";
+  }
+});
+
 api("/api/health").then((h) => {
   const engine = h.third_party ? `${h.model} via ${new URL(h.base_url).host}` : h.model;
   $("#health").textContent = `${engine} · ${h.skills.length} skills · ${h.sources.join(", ")}`;

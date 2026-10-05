@@ -221,3 +221,8 @@ h1 { font: 600 30px/1.2 Georgia, "Times New Roman", serif; margin: 0 0 8px; }
 
 .outline-filter { width: 100%; padding: 5px 9px; margin-bottom: 8px; border: 1px solid var(--line);
   border-radius: 7px; background: transparent; font-size: 13px; }
+
+#engine-check { margin-top: 8px; }
+.engine-result { margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.45; }
+.engine-result.ok { background: var(--good-soft); color: var(--good); }
+.engine-result.bad { background: var(--bad-soft); color: var(--bad); word-break: break-word; }

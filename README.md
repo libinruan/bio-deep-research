@@ -30,11 +30,25 @@ BDR_BASE_URL=https://openrouter.ai/api
 BDR_MODEL=z-ai/glm-5.3
 BDR_AUTH_TOKEN=sk-or-...
 
-# or a provider directly
+# Alibaba Cloud Model Studio (Qwen) — address depends on your plan
+BDR_BASE_URL=https://coding-intl.dashscope.aliyuncs.com/apps/anthropic
+BDR_MODEL=qwen3.7-plus
+BDR_AUTH_TOKEN=sk-...
+
+# or another provider directly
 BDR_BASE_URL=https://api.z.ai/api/anthropic   # or https://api.moonshot.ai/anthropic
 BDR_MODEL=glm-5.2                             # or kimi-k3[1m]
 BDR_AUTH_TOKEN=...
 ```
+
+Alibaba Cloud issues a different address and a different key per plan, and they are not
+interchangeable — a Coding Plan key against a pay-as-you-go address returns 401. The
+pay-as-you-go address embeds the workspace id shown in the console. `.env.example` lists all
+three forms.
+
+After changing `.env`, restart the app and press **Test connection** in the sidebar. It asks
+the endpoint directly before involving the harness, so a wrong key or address comes back in
+about a second carrying the provider's own message, rather than as a timeout.
 
 Setting `BDR_BASE_URL` also sends an empty `ANTHROPIC_API_KEY` to the harness. Without that,
 a Claude Code login on the same machine can take precedence and the run quietly bills Claude
