@@ -41,6 +41,10 @@ BDR_MODEL=glm-5.2                             # or kimi-k3[1m]
 BDR_AUTH_TOKEN=...
 ```
 
+`BDR_BASE_URL` is the endpoint's base, with no `/v1` on the end — the harness appends
+`/v1/messages` itself. A URL that already ends in `/v1`, or in a provider's OpenAI-compatible
+path such as `/compatible-mode/v1`, is the wrong one to put here.
+
 Alibaba Cloud issues a different address and a different key per plan, and they are not
 interchangeable — a Coding Plan key against a pay-as-you-go address returns 401. The
 pay-as-you-go address embeds the workspace id shown in the console. `.env.example` lists all
