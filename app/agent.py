@@ -232,12 +232,44 @@ async def _structured(system: str, prompt: str, schema: dict[str, Any], effort: 
     return out
 
 
+def _url_complaint() -> str:
+    """A plain explanation when BDR_BASE_URL is not an Anthropic-compatible address.
+
+    A provider's console usually shows its OpenAI-compatible address, and pasting that here
+    fails with something unhelpful like "No static resource compatible-mode/v1/messages".
+    """
+    url = BASE_URL.rstrip("/")
+    if not url.startswith(("http://", "https://")):
+        return f"BDR_BASE_URL is missing the scheme. Use https://{url}"
+
+    wrong_protocol = ("This app speaks the Anthropic Messages API, which is a different "
+                      "protocol, not a different spelling of the same one.")
+    alibaba = "aliyuncs.com" in url
+    anthropic_path = "/apps/anthropic" if alibaba else "the provider's Anthropic-compatible path"
+
+    if "/compatible-mode" in url:
+        return (f"BDR_BASE_URL is an OpenAI-compatible address. Replace the "
+                f"'/compatible-mode/...' part with {anthropic_path}. {wrong_protocol}")
+    if "/chat/completions" in url:
+        return f"BDR_BASE_URL is an OpenAI chat-completions address. {wrong_protocol}"
+    if alibaba and "/api/v1" in url:
+        return (f"BDR_BASE_URL is a DashScope-native address. Replace the '/api/v1' part "
+                f"with {anthropic_path}. {wrong_protocol}")
+    if url.endswith("/v1"):
+        return ("BDR_BASE_URL ends in '/v1', which the harness appends itself. "
+                "Remove it, leaving the endpoint's base address.")
+    return ""
+
+
 async def _probe_endpoint() -> str:
     """Ask the configured endpoint directly, to surface the provider's own error.
 
     The harness retries authentication failures for a long time before giving up, so a wrong
     key would otherwise look like a timeout. One plain request gets the real answer in a second.
     """
+    complaint = _url_complaint()
+    if complaint:
+        return complaint
     url = BASE_URL.rstrip("/") + "/v1/messages"
     headers = {"content-type": "application/json", "anthropic-version": "2023-06-01"}
     token = os.environ.get("BDR_AUTH_TOKEN", "").strip()
@@ -259,7 +291,9 @@ async def _probe_endpoint() -> str:
         pass
     hint = {
         401: " Check BDR_AUTH_TOKEN, and that the key matches this endpoint and plan.",
-        403: " The key was recognised but not allowed to use this endpoint or model.",
+        403: (" The key is valid, but this workspace is not entitled to the model. "
+              "'AccessDenied.Unpurchased' means the provider account needs the service "
+              "activated for this region, with billing enabled — nothing to fix here."),
         404: " Check BDR_BASE_URL — it should be the provider's Anthropic-compatible address.",
         429: " The provider is rate-limiting or the account is out of credit.",
     }.get(resp.status_code, "")
