@@ -236,25 +236,19 @@ def _url_complaint() -> str:
     """A plain explanation when BDR_BASE_URL is not an Anthropic-compatible address.
 
     A provider's console usually shows its OpenAI-compatible address, and pasting that here
-    fails with something unhelpful like "No static resource compatible-mode/v1/messages".
+    fails with wording that says nothing about why, such as "No static resource".
     """
     url = BASE_URL.rstrip("/")
     if not url.startswith(("http://", "https://")):
         return f"BDR_BASE_URL is missing the scheme. Use https://{url}"
 
     wrong_protocol = ("This app speaks the Anthropic Messages API, which is a different "
-                      "protocol, not a different spelling of the same one.")
-    alibaba = "aliyuncs.com" in url
-    anthropic_path = "/apps/anthropic" if alibaba else "the provider's Anthropic-compatible path"
-
+                      "protocol, not a different spelling of the same one. Use the provider's "
+                      "Anthropic-compatible address instead.")
     if "/compatible-mode" in url:
-        return (f"BDR_BASE_URL is an OpenAI-compatible address. Replace the "
-                f"'/compatible-mode/...' part with {anthropic_path}. {wrong_protocol}")
+        return f"BDR_BASE_URL is an OpenAI-compatible address. {wrong_protocol}"
     if "/chat/completions" in url:
         return f"BDR_BASE_URL is an OpenAI chat-completions address. {wrong_protocol}"
-    if alibaba and "/api/v1" in url:
-        return (f"BDR_BASE_URL is a DashScope-native address. Replace the '/api/v1' part "
-                f"with {anthropic_path}. {wrong_protocol}")
     if url.endswith("/v1"):
         return ("BDR_BASE_URL ends in '/v1', which the harness appends itself. "
                 "Remove it, leaving the endpoint's base address.")

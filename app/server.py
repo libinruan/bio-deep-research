@@ -108,6 +108,7 @@ async def execute(thread: dict[str, Any], turn: dict[str, Any], run: Run, want_a
             session_id=thread.get("session_id"), year_from=turn.get("year_from"), year_to=turn.get("year_to"),
         )
         turn["engine"] = agent.engine()["model"]
+        turn["third_party"] = agent.engine()["third_party"]
         thread["session_id"] = result["session_id"]
         # A resumed session reports its running total, so charge this turn only the difference.
         total = result["usage"]["cost_usd"]

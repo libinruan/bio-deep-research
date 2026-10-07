@@ -280,7 +280,8 @@ function renderTurn(turn) {
     turn.mode === "deep" ? "Deep research" : "Quick answer",
     turn.hypotheses ? "with hypotheses" : "",
     turn.usage ? `${turn.usage.seconds}s` : "",
-    turn.usage && turn.usage.cost_usd != null ? `≈ $${turn.usage.cost_usd.toFixed(2)} API-equivalent` : "",
+    turn.third_party ? esc(turn.engine || "other engine")
+      : (turn.usage && turn.usage.cost_usd != null ? `≈ $${turn.usage.cost_usd.toFixed(2)} API-equivalent` : ""),
   ].filter(Boolean).map((c) => `<span class="badge">${esc(c)}</span>`).join("");
 
   const problems = (turn.problems || []).length ? `
