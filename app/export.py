@@ -17,6 +17,13 @@ from typing import Any
 
 CITE_LINK = re.compile(r"\[\[(\d+)\]\]\(#ref-(\d+)\)")
 CHROME_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
+# macOS installs Chrome into /Applications and puts nothing on PATH, so shutil.which
+# alone reports it missing on a machine where it is plainly installed.
+CHROME_APPS = (
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    "~/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+)
 
 
 def _doi_url(doi: str) -> str:
@@ -241,6 +248,10 @@ def chrome_path() -> str | None:
         found = shutil.which(name)
         if found:
             return found
+    for app in CHROME_APPS:
+        candidate = Path(app).expanduser()
+        if candidate.is_file():
+            return str(candidate)
     return None
 
 

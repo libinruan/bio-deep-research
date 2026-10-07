@@ -5,8 +5,14 @@ dependencies:
   - python=3.12
   - pip
   - pip:
+      # Uncapped on purpose: this SDK drives the Claude Code CLI, which updates
+      # independently, so an old SDK is the likelier breakage.
       - claude-agent-sdk>=0.2.163
-      - fastapi
-      - uvicorn[standard]
-      - httpx
-      - pydantic
+      - fastapi>=0.140,<1
+      - uvicorn[standard]>=0.54,<1
+      - httpx>=0.28,<1
+      - pydantic>=2.13,<3
+      # Verified working set, 2026-10-07 on Python 3.12.15:
+      #   claude-agent-sdk 0.2.163  fastapi 0.142.2  starlette 1.7.0
+      #   uvicorn 0.54.0  pydantic 2.13.5  httpx 0.28.1
+      # If a fresh install misbehaves, pin to exactly these.

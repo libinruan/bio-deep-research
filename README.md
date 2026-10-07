@@ -6,62 +6,13 @@ text, and writes an answer in which every citation has been checked against the 
 record it came from. Deep mode adds a structured evidence report, new hypotheses with
 testable predictions, and an independent audit of each claim against its source.
 
-## Run it
+Three things to know before you start:
 
-```bash
-./run.sh          # then open http://127.0.0.1:8790
-```
-
-The agent runs on the Claude Agent SDK and uses your existing Claude Code login, so no API
-key is needed. If you are not logged in, run `claude` once and log in. Optional settings
-are in `.env.example`.
-
-To rebuild the environment from scratch: `conda env create -p ./.conda -f environment.yml`.
-
-### Using another model provider
-
-The app talks to its model through an Anthropic-compatible endpoint, so providers that offer
-one — Kimi (Moonshot), GLM (Z.ai), or a local translation proxy in front of an OpenAI-only
-model — can be used instead of Claude. Set three variables in `.env`:
-
-```bash
-# OpenRouter — one key, hundreds of models
-BDR_BASE_URL=https://openrouter.ai/api
-BDR_MODEL=z-ai/glm-5.3
-BDR_AUTH_TOKEN=sk-or-...
-
-# or another provider directly
-BDR_BASE_URL=https://api.z.ai/api/anthropic   # or https://api.moonshot.ai/anthropic
-BDR_MODEL=glm-5.2                             # or kimi-k3[1m]
-BDR_AUTH_TOKEN=...
-```
-
-`BDR_BASE_URL` is the endpoint's base, with no `/v1` on the end — the harness appends
-`/v1/messages` itself. A URL that already ends in `/v1`, or in a provider's OpenAI-compatible
-path such as `/compatible-mode/v1`, is the wrong one to put here.
-
-After changing `.env`, restart the app and press **Test connection** in the sidebar. It asks
-the endpoint directly before involving the harness, so a wrong key or address comes back in
-about a second carrying the provider's own message, rather than as a timeout.
-
-Setting `BDR_BASE_URL` also sends an empty `ANTHROPIC_API_KEY` to the harness. Without that,
-a Claude Code login on the same machine can take precedence and the run quietly bills Claude
-instead of the provider you configured.
-
-Setting `BDR_BASE_URL` changes three things automatically: every model tier is pinned to
-`BDR_MODEL` (background work otherwise asks the endpoint for a Claude model it does not
-serve), the Claude-only `effort` setting is dropped, and the audit stops relying on enforced
-JSON schemas, asking for JSON in the prompt instead. The sidebar footer shows the active engine.
-
-Caveats worth knowing:
-
-- Anthropic does not support routing this harness to non-Claude models, so treat it as
-  best-effort. Skills, the literature tools, the read-confinement hook and citation
-  verification are all client-side and keep working.
-- Deep research is the demanding case: 30 or more tool calls across many turns with a long
-  context. Re-check report quality after switching rather than assuming parity.
-- This path is wired and the request routing is verified, but it has not been run end to end
-  against a real third-party key.
+- It runs **entirely on your machine** — your questions and reports never leave it, except
+  as queries to the literature APIs.
+- It **costs real money per run**, because it drives a commercial model. See
+  [What it costs](#what-it-costs).
+- It listens on **localhost with no login**. See [Running it safely](#running-it-safely).
 
 ## What it does
 
@@ -77,6 +28,130 @@ Follow-up questions in a thread reuse everything already retrieved.
 Saved searches are listed in the sidebar. Hover one for a **×** to delete it, which asks once
 before it goes. **Select** turns on checkboxes for clearing several at once, with **All** to
 take the lot; a search with a run still going is kept and named rather than deleted.
+
+## Requirements
+
+| | Why |
+|---|---|
+| Linux or macOS | Developed on Linux. macOS should work; Windows is untested. |
+| [conda](https://conda-forge.org/download/) or mamba | Builds the Python 3.12 environment. Nothing is installed outside this directory. |
+| A model — either [Claude Code](https://code.claude.com/docs) installed and logged in, **or** an API key for any Anthropic-compatible endpoint | The agent runs on the Claude Agent SDK, which launches the `claude` CLI as a subprocess. See [Choosing a model engine](#choosing-a-model-engine) for the key-based route. |
+| Outbound HTTPS | PubMed and PubTator3 (NCBI), Europe PMC (EBI), OpenAlex, ClinicalTrials.gov. Every search is live; there is no offline cache. |
+| Chrome or Chromium — *optional* | Only for **PDF** export. Markdown, HTML, BibTeX and RIS need nothing extra. |
+
+If you take the Claude Code route, the `claude` binary must be on your `PATH` — the SDK finds
+it with `which claude`. The app still starts without it and fails on the first run instead, so
+check it beforehand rather than wondering what broke.
+
+## Install
+
+```bash
+git clone https://github.com/<owner>/bio-deep-research.git
+cd bio-deep-research
+conda env create -p ./.conda -f environment.yml   # a couple of minutes
+cp .env.example .env
+```
+
+The environment lands at `./.conda` *inside* the checkout and `run.sh` calls
+`./.conda/bin/python` directly, so there is nothing to activate and uninstalling is `rm -rf`
+on the directory.
+
+Every setting in `.env` is optional, but set this one:
+
+```bash
+BDR_CONTACT_EMAIL=you@example.org
+```
+
+NCBI's usage policy expects a contact address on automated traffic, and OpenAlex routes
+requests carrying one into a faster pool. It goes to those two services and nowhere else.
+`.env` is sourced by bash, so quote any value containing spaces, `#` or `$`.
+
+## Choosing a model engine
+
+By default the app uses Claude through your Claude Code login, and no key is needed. To use
+another provider instead, point it at that provider's **Anthropic-compatible** endpoint:
+
+```bash
+# OpenRouter — one key, hundreds of models, no per-region setup
+BDR_BASE_URL=https://openrouter.ai/api
+BDR_MODEL=z-ai/glm-5.3
+BDR_AUTH_TOKEN=sk-or-...
+
+# or a provider directly
+BDR_BASE_URL=https://api.z.ai/api/anthropic   # or https://api.moonshot.ai/anthropic
+BDR_MODEL=glm-5.2                             # or kimi-k3[1m]
+BDR_AUTH_TOKEN=...
+```
+
+`BDR_BASE_URL` is the endpoint's base, with **no `/v1`** on the end — the harness appends
+`/v1/messages` itself. A URL ending in `/v1`, or in a provider's OpenAI-compatible path such
+as `/compatible-mode/v1`, is the wrong one: that is a different protocol, not a different
+spelling. **Test connection** in the sidebar names the mistake if you make it.
+
+Setting `BDR_BASE_URL` changes four things automatically: every model tier is pinned to
+`BDR_MODEL` (background work otherwise asks the endpoint for a Claude model it does not
+serve), an empty `ANTHROPIC_API_KEY` is sent so a Claude Code login on the same machine cannot
+quietly take precedence and bill the wrong account, the Claude-only `effort` setting is
+dropped, and the audit asks for JSON in the prompt rather than relying on enforced schemas.
+The sidebar footer shows the active engine.
+
+Verified end to end on OpenRouter with `z-ai/glm-5.3`: routing, quick mode, the literature
+tools, citation verification, the audit and exports all work. Deep-mode report quality on a
+non-Claude engine has not been benchmarked — use **Run again** and the comparison view to
+judge that on your own questions.
+
+## First run
+
+```bash
+./run.sh          # then open http://127.0.0.1:8790
+```
+
+1. The sidebar footer names the active engine. Press **Test connection** — it asks the
+   endpoint directly, before the harness is involved, so a wrong key or address comes back in
+   about a second carrying the provider's own message rather than as a timeout.
+2. Ask something small in **Quick answer** mode. It finishes in under a minute and costs
+   cents. You should get a report with numbered citations and a populated Sources panel.
+3. Only then try **Deep research**. Read the next section first.
+
+<kbd>Ctrl</kbd>+<kbd>C</kbd> stops the server. Saved searches persist in `data/threads/` and
+come back on restart.
+
+## What it costs
+
+The app is free; the model is not. Every run bills whichever engine you configured. Measured
+on this project:
+
+| Run | Engine | Rough cost |
+|---|---|---|
+| Quick answer | `z-ai/glm-5.3` via OpenRouter | ~$0.03 |
+| Deep research | `claude-opus-5-5` | ~$5 |
+| Deep research + **Audit claims** | `claude-opus-5-5` | ~$7 |
+
+Deep mode makes 30 or more tool calls across many turns with a long context, and the audit
+re-reads every cited abstract; those two options dominate the bill. Treat the figures as an
+order of magnitude, not a quote — cost scales with how much literature a question pulls in.
+On a Claude subscription, runs draw against your usage limits rather than a card.
+
+The cost shown at the foot of a finished answer is **hidden when a third-party engine is
+configured**, because the harness prices every run at Claude's rates and the number would be
+wrong. Check your provider's dashboard instead.
+
+## Running it safely
+
+**There is no login. Anyone who can reach the port can run searches that bill your account
+and read every report you have saved.** The server binds to `127.0.0.1` for that reason.
+
+- Don't change the bind address, don't put it behind a tunnel or port-forward, and don't run
+  it where other people can reach loopback. Adding authentication is out of scope.
+- To use it from another machine, forward the port over SSH:
+  `ssh -L 8790:127.0.0.1:8790 you@host`. Authentication then happens at the SSH layer and the
+  app is untouched.
+- `data/threads/*.json` holds the full text of every report and every abstract retrieved, in
+  plaintext. It is gitignored, but not protected or encrypted. Delete the directory to wipe
+  your history.
+- Model credentials live in `.env`, which is gitignored. Keep it that way.
+
+## Using it
 
 ### Comparing two runs
 
@@ -106,11 +181,9 @@ every gene is checked against NCBI's own record before it is offered as a link. 
 underline means the mapping could not be corroborated, and the card says so. The checkbox in
 the sidebar turns the marking off.
 
-Clicking a citation also walks the Sources panel to that reference, switching to the Sources
-tab if another is open and outlining the entry. Only the panel moves, so the sentence being
-read stays put.
-
-Clicking a citation opens **Where this comes from**: the claim it is attached to, the source
+Clicking a citation walks the Sources panel to that reference, switching to the Sources tab
+if another is open and outlining the entry. Only the panel moves, so the sentence being read
+stays put. It also opens **Where this comes from**: the claim it is attached to, the source
 it points at, and the passages of that source closest to the claim, with the shared wording
 highlighted. The match is lexical, weighted towards shared numbers — effect sizes, sample
 sizes and percentages — so it points at a passage rather than judging that the passage
@@ -120,9 +193,9 @@ citation is shown alongside. When nothing in the abstract shares wording, it say
 Every answer exports from the bar at its head or foot: **PDF** and **HTML** (citations
 become superscripts that jump to the reference list, which links on to each paper),
 **Markdown** (each citation links straight to the paper), and **BibTeX** / **RIS** for a
-reference manager. PDF export needs Chrome or Chromium installed.
+reference manager. PDF export needs Chrome or Chromium; the other four formats need nothing.
 
-### Sources
+## Sources
 
 Searched live: **PubMed**, **Europe PMC** (including bioRxiv/medRxiv preprints and
 open-access full text), **OpenAlex**, and **ClinicalTrials.gov**.
@@ -133,7 +206,7 @@ formal strategy (concept blocks with synonyms, MeSH headings and Chinese terms) 
 it into the exact query syntax for each of those databases, under the **Search strategy**
 tab, ready to paste into the site through your institutional access.
 
-### How citations are kept honest
+## How citations are kept honest
 
 1. Every record a tool returns goes into a per-thread evidence registry (`app/registry.py`).
 2. The agent cites by identifier: `[PMID:…]`, `[DOI:…]`, `[NCT…]`.
@@ -148,6 +221,22 @@ tab, ready to paste into the site through your institutional access.
 The audit reads abstracts, so it cannot confirm details that appear only in a paper's full
 text. It reduces citation errors; it does not replace reading the key papers.
 
+## Limitations
+
+- **Open-access bias.** Only the four sources above are searched. Full-text reading covers
+  open-access articles only; everything else is abstract-only.
+- **The audit reads abstracts.** It cannot check a figure that appears only in a paper's
+  methods or supplement.
+- **Passage matching is lexical, not semantic.** "Where this comes from" points at the
+  nearest-wording passage; it does not judge that the passage supports the claim.
+- **Third-party engines are best-effort.** Anthropic does not support routing this harness to
+  non-Claude models. Quick mode is verified; deep-mode quality is not benchmarked.
+- **On macOS, PDF export** looks for Chrome in `/Applications` as well as on `PATH`; if you
+  installed it elsewhere, that one export will report it missing.
+- **One process, one person.** No job queue, no multi-user support, no storage beyond JSON
+  files on disk.
+- **Not medical advice.** A tool for reading literature, nothing else.
+
 ## Layout
 
 ```
@@ -155,20 +244,22 @@ app/
   sources.py    clients for PubMed, Europe PMC, OpenAlex, ClinicalTrials.gov
   registry.py   evidence registry, citation verification and numbering
   strategy.py   renders concept blocks into per-database query syntax
+  entities.py   gene/drug/variant marking via PubTator3, verified against NCBI
   tools.py      the agent's tools (in-process MCP server)
-  prompts.py    system prompt, mode instructions, audit prompt
-  agent.py      Claude Agent SDK runner: research turn and audit pass
+  prompts.py    system prompt, mode instructions, audit and comparison prompts
+  agent.py      Claude Agent SDK runner: research turn, audit, comparison
+  export.py     Markdown, HTML, PDF, BibTeX and RIS output
   server.py     FastAPI server: runs, live event stream, threads, exports
-  static/       the web UI
+  static/       the web UI (vendor/ holds marked and DOMPurify)
 agent_home/.claude/skills/   skills the agent can load
-data/threads/                saved searches (JSON)
+data/threads/                saved searches (JSON, gitignored)
 ```
 
 ## Skills
 
 The agent loads skills on demand. Seven come from
 [K-Dense scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills)
-(MIT), pinned to a reviewed commit (see `agent_home/.claude/skills/VENDORED.md`):
+(MIT — see `agent_home/.claude/skills/K-DENSE-LICENSE.md`), pinned to a reviewed commit:
 literature-review, paper-lookup, database-lookup, citation-management,
 hypothesis-generation, scientific-brainstorming, scientific-critical-thinking.
 `biomedical-search-strategy` is this project's own.
@@ -182,5 +273,20 @@ To add another skill, copy its folder into `agent_home/.claude/skills/` and rest
   a hook in `app/agent.py`). Skill scripts therefore never execute.
 - Retrieved paper text is treated as data, and there is nothing for injected instructions
   to act on beyond running more literature searches.
-- The server binds to 127.0.0.1 and has no authentication. Do not expose it to a network.
+- Reports and retrieved abstracts are stored unencrypted under `data/threads/`.
 - This is a research tool. It does not give medical advice.
+
+## Licence and attribution
+
+MIT — see [LICENSE](LICENSE).
+
+Bundled third-party code, each under its own licence, is listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md):
+
+- seven agent skills from [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills) (MIT)
+- [marked](https://github.com/markedjs/marked) (MIT) and
+  [DOMPurify](https://github.com/cure53/DOMPurify) (Apache-2.0 / MPL-2.0) in `app/static/vendor/`
+
+Literature records come from NCBI/PubMed, Europe PMC, OpenAlex and ClinicalTrials.gov at
+query time. That content is not part of this project and is governed by each provider's own
+terms of use.
