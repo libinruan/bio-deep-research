@@ -237,6 +237,28 @@ async def get_thread(thread_id: str) -> dict[str, Any]:
     return public(load_thread(thread_id))
 
 
+class DeleteRequest(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=500)
+
+
+@app.post("/api/threads/delete")
+async def delete_threads(req: DeleteRequest) -> dict[str, Any]:
+    """Delete several saved searches, skipping any with a run still going."""
+    deleted, skipped = [], []
+    for thread_id in dict.fromkeys(req.ids):
+        try:
+            thread = load_thread(thread_id)
+        except HTTPException:
+            continue  # already gone
+        if any(t["id"] in runs and not runs[t["id"]].done for t in thread["turns"]):
+            skipped.append({"id": thread_id, "title": thread["title"]})
+            continue
+        _path(thread_id).unlink(missing_ok=True)
+        registries.pop(thread_id, None)
+        deleted.append(thread_id)
+    return {"deleted": deleted, "skipped": skipped}
+
+
 @app.delete("/api/threads/{thread_id}")
 async def delete_thread(thread_id: str) -> dict[str, bool]:
     thread = load_thread(thread_id)

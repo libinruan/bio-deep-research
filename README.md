@@ -74,6 +74,10 @@ Caveats worth knowing:
 
 Follow-up questions in a thread reuse everything already retrieved.
 
+Saved searches are listed in the sidebar. Hover one for a **×** to delete it, which asks once
+before it goes. **Select** turns on checkboxes for clearing several at once, with **All** to
+take the lot; a search with a run still going is kept and named rather than deleted.
+
 ### Comparing two runs
 
 **Run again** at the foot of a finished answer asks the same question in a fresh session.

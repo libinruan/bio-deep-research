@@ -41,14 +41,88 @@ const drafts = {};           // turn id -> streaming text
 
 // ------------------------------------------------------------------ sidebar
 
+let selecting = false;
+const selected = new Set();
+
 async function loadHistory() {
   const threads = await api("/api/threads");
+  for (const id of [...selected]) {
+    if (!threads.some((t) => t.id === id)) selected.delete(id);
+  }
+  $("#select-mode").hidden = threads.length < 2;
   $("#history").innerHTML = threads.map((t) => `
     <div class="hist ${current && current.id === t.id ? "active" : ""}">
+      ${selecting ? `<input type="checkbox" data-pick="${t.id}" ${selected.has(t.id) ? "checked" : ""}
+         aria-label="Select ${esc(t.title)}">` : ""}
       <button class="open" data-id="${t.id}" title="${esc(t.title)}">${esc(t.title)}</button>
-      <button class="del" data-id="${t.id}" aria-label="Delete this search">×</button>
+      ${selecting ? "" : `<button class="del" data-id="${t.id}" aria-label="Delete this search" title="Delete this search">×</button>`}
     </div>`).join("") || `<div class="empty">No searches yet.</div>`;
+  syncSelectBar(threads.length);
 }
+
+function syncSelectBar(total) {
+  $("#select-bar").hidden = !selecting;
+  $("#select-mode").textContent = selecting ? "Done" : "Select";
+  if (!selecting) return;
+  $("#delete-selected").disabled = selected.size === 0;
+  $("#delete-selected").textContent = selected.size ? `Delete ${selected.size}` : "Delete";
+  $("#select-all").checked = total > 0 && selected.size === total;
+}
+
+$("#select-mode").addEventListener("click", () => {
+  selecting = !selecting;
+  selected.clear();
+  loadHistory();
+});
+$("#select-cancel").addEventListener("click", () => {
+  selecting = false;
+  selected.clear();
+  loadHistory();
+});
+$("#select-all").addEventListener("change", (e) => {
+  selected.clear();
+  const boxes = [...document.querySelectorAll("[data-pick]")];
+  for (const box of boxes) {
+    box.checked = e.target.checked;
+    if (e.target.checked) selected.add(box.dataset.pick);
+  }
+  syncSelectBar(boxes.length);
+});
+$("#delete-selected").addEventListener("click", async () => {
+  const ids = [...selected];
+  const button = $("#delete-selected");
+  if (button.dataset.armed !== "1") {
+    button.dataset.armed = "1";
+    button.textContent = `Delete ${ids.length}? Click again`;
+    setTimeout(() => { delete button.dataset.armed; syncSelectBar(0); }, 4000);
+    return;
+  }
+  delete button.dataset.armed;
+  button.disabled = true;
+  try {
+    const r = await api("/api/threads/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }),
+    });
+    if (current && r.deleted.includes(current.id)) showHome();
+    if (r.skipped.length) {
+      alert(`Kept ${r.skipped.length} search${r.skipped.length > 1 ? "es" : ""} still running:\n` +
+            r.skipped.map((s) => `• ${s.title}`).join("\n"));
+    }
+    selected.clear();
+    selecting = false;
+  } catch (err) {
+    alert(err.message);
+  }
+  loadHistory();
+});
+
+$("#history").addEventListener("change", (e) => {
+  const pick = e.target.closest("[data-pick]");
+  if (!pick) return;
+  if (pick.checked) selected.add(pick.dataset.pick);
+  else selected.delete(pick.dataset.pick);
+  syncSelectBar(document.querySelectorAll("[data-pick]").length);
+});
 
 $("#history").addEventListener("click", async (e) => {
   const btn = e.target.closest("button");

@@ -10,7 +10,15 @@
 <aside id="sidebar">
   <div class="brand"><span class="logo">◈</span> Bio Deep Research</div>
   <button id="new-search" class="btn primary wide">New search</button>
-  <div class="side-label">History</div>
+  <div class="side-label">
+    History
+    <button id="select-mode" class="link-btn" hidden>Select</button>
+  </div>
+  <div id="select-bar" class="select-bar" hidden>
+    <label><input type="checkbox" id="select-all"> All</label>
+    <button id="delete-selected" class="btn small" disabled>Delete</button>
+    <button id="select-cancel" class="link-btn">Cancel</button>
+  </div>
   <nav id="history"></nav>
   <label class="side-toggle"><input type="checkbox" id="entity-toggle" checked> Highlight genes &amp; drugs</label>
   <div id="health" class="health"></div>

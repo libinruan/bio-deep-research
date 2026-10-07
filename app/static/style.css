@@ -24,14 +24,23 @@ button, input, textarea { font: inherit; color: inherit; }
   display: flex; flex-direction: column; gap: 10px; position: sticky; top: 0; height: 100vh; }
 .brand { font-weight: 650; font-size: 16px; letter-spacing: .01em; padding: 2px 4px 8px; }
 .logo { color: var(--accent); }
-.side-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 10px 4px 0; }
+.side-label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+  margin: 10px 4px 0; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.link-btn { background: none; border: 0; color: var(--accent); cursor: pointer; font-size: 11px;
+  text-transform: none; letter-spacing: 0; padding: 0; }
+.link-btn:hover { text-decoration: underline; }
+.select-bar { display: flex; align-items: center; gap: 8px; padding: 6px 4px; font-size: 12px; color: var(--muted); }
+.select-bar label { display: flex; align-items: center; gap: 5px; margin-right: auto; cursor: pointer; }
 #history { overflow-y: auto; flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .hist { display: flex; align-items: center; gap: 4px; border-radius: 8px; }
 .hist:hover, .hist.active { background: var(--accent-soft); }
 .hist button.open { flex: 1; min-width: 0; text-align: left; background: none; border: 0; padding: 7px 8px; cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13.5px; }
-.hist button.del { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px 8px; visibility: hidden; }
-.hist:hover button.del { visibility: visible; }
+.hist button.del { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px 8px;
+  opacity: .35; border-radius: 6px; }
+.hist:hover button.del, .hist button.del:focus-visible { opacity: 1; }
+.hist button.del:hover { background: var(--bad-soft); color: var(--bad); }
+.hist input[type=checkbox] { margin: 0 2px 0 6px; flex: none; }
 .health { font-size: 11.5px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 10px; }
 
 #main { flex: 1; min-width: 0; padding: 28px clamp(16px, 4vw, 48px) 60px; }
