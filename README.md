@@ -106,6 +106,10 @@ every gene is checked against NCBI's own record before it is offered as a link. 
 underline means the mapping could not be corroborated, and the card says so. The checkbox in
 the sidebar turns the marking off.
 
+Clicking a citation also walks the Sources panel to that reference, switching to the Sources
+tab if another is open and outlining the entry. Only the panel moves, so the sentence being
+read stays put.
+
 Clicking a citation opens **Where this comes from**: the claim it is attached to, the source
 it points at, and the passages of that source closest to the claim, with the shared wording
 highlighted. The match is lexical, weighted towards shared numbers — effect sizes, sample

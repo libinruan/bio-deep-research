@@ -843,22 +843,48 @@ function highlight(passage, claim) {
   return esc(passage).replace(new RegExp(`\\b(${pattern})`, "gi"), "<mark>$1</mark>");
 }
 
-function openSourceCard(turn, n) {
-  tabs[turn.id] = "sources";
-  renderTurn(turn);
+// Bring reference n into view in the sources panel. Scrolls the panel itself rather than
+// the page, so the claim being read stays where it is.
+function revealSource(turn, n, { expand = false } = {}) {
   const card = document.getElementById(`t${turn.id}-ref-${n}`);
-  if (card) {
-    card.classList.add("hit");
-    card.scrollIntoView({ behavior: "smooth", block: "center" });
-    card.querySelector("details")?.setAttribute("open", "");
+  if (!card) return;
+  for (const hit of document.querySelectorAll(".src.hit")) hit.classList.remove("hit");
+  card.classList.add("hit");
+  if (expand) card.querySelector("details")?.setAttribute("open", "");
+  const pane = card.closest(".pane");
+  if (!pane) {
+    card.scrollIntoView({ block: "center" });
+    return;
   }
+  // Positioned directly rather than animated: the highlight already shows what moved, and
+  // a smooth scroll here is both unreliable and unwelcome to anyone avoiding motion.
+  const offset = card.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+  pane.scrollTop += offset - 12;
+}
+
+// Switching to the sources tab re-renders the turn, so anything held from before it
+// (the clicked chip) has to be found again afterwards.
+function openSourceCard(turn, n, { expand = false, chipIndex = null } = {}) {
+  const alreadyThere = (tabs[turn.id] || (turn.status === "running" ? "activity" : START_TAB)) === "sources";
+  if (!alreadyThere) {
+    tabs[turn.id] = "sources";
+    renderTurn(turn);
+  }
+  revealSource(turn, n, { expand });
+  if (chipIndex === null) return null;
+  return document.querySelectorAll(`#turn-${turn.id} a.cite`)[chipIndex] || null;
 }
 
 function showEvidence(chip, turn) {
   const n = Number(chip.dataset.n);
   const ref = turn.references.find((r) => r.n === n);
   if (!ref) return;
-  const claim = claimSentence(chip);
+  const claim = claimSentence(chip);  // read from the page before any re-render
+
+  // Also walk the sources panel to this reference, so the citation and its entry line up.
+  const chips = [...document.querySelectorAll(`#turn-${turn.id} a.cite`)];
+  chip = openSourceCard(turn, n, { chipIndex: chips.indexOf(chip) }) || chip;
+  if (!chip.isConnected) return;
   const passages = ref.abstract ? Evidence.bestPassages(claim, ref.abstract) : [];
   const issues = ((turn.audit && turn.audit.issues) || []).filter((i) => i.n === n);
 
@@ -883,7 +909,7 @@ function showEvidence(chip, turn) {
   }
   body += `<div class="ev-foot">
       <a class="btn small" href="${esc(ref.url)}" target="_blank" rel="noopener">Open source</a>
-      <button class="btn small" data-card="${n}">Show in sources</button>
+      <button class="btn small" data-card="${n}">Show the abstract</button>
     </div>`;
 
   evidenceBox.querySelector(".ev-body").innerHTML = body;
@@ -915,7 +941,7 @@ evidenceBox.addEventListener("click", (e) => {
   const card = e.target.closest("[data-card]");
   if (!card) return;
   const turn = current && current.turns.find((t) => t.id === evidenceBox.dataset.turn);
-  if (turn) openSourceCard(turn, Number(card.dataset.card));
+  if (turn) openSourceCard(turn, Number(card.dataset.card), { expand: true });
   closeEvidence();
 });
 document.addEventListener("click", (e) => {
