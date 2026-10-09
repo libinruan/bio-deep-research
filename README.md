@@ -123,9 +123,11 @@ on this project:
 
 | Run | Engine | Rough cost |
 |---|---|---|
-| Quick answer | `z-ai/glm-5.3` via OpenRouter | ~$0.03 |
-| Deep research | `claude-opus-5-5` | ~$5 |
-| Deep research + **Audit claims** | `claude-opus-5-5` | ~$7 |
+| Quick answer | `z-ai/glm-5.3` via OpenRouter | ~US$0.03 |
+| Deep research | `claude-opus-5-5` | ~US$5 |
+| Deep research + **Audit claims** | `claude-opus-5-5` | ~US$7 |
+
+All figures in this README and in the app are **US dollars**, the currency providers bill in.
 
 Deep mode makes 30 or more tool calls across many turns with a long context, and the audit
 re-reads every cited abstract; those two options dominate the bill. Treat the figures as an
@@ -140,9 +142,9 @@ keeps the history, so the daily figures survive it.
 
 Figures are recomputed from token counts and your provider's own published prices, because
 the harness reports every run at Anthropic's rates whatever endpoint was used — on one
-measured GLM-5.3 search it said $0.195 for work that actually cost $0.0077. Prices come from
+measured GLM-5.3 search it said US$0.195 for work that actually cost US$0.0077. Prices come from
 OpenRouter's live list; for a provider with no machine-readable prices, set `BDR_PRICE_IN`
-and `BDR_PRICE_OUT` in `.env` (dollars per million tokens) and those are used instead. On a
+and `BDR_PRICE_OUT` in `.env` (US dollars per million tokens) and those are used instead. On a
 Claude login the harness's own figure is correct and is used as-is.
 
 These are estimates from token counts, not billed amounts — check your provider's dashboard

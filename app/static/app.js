@@ -685,7 +685,7 @@ $("#compare").addEventListener("click", async (e) => {
         </div>`).join("") : `<div class="banner" style="background:var(--good-soft);color:var(--good)">No disagreements found between the two runs.</div>`}
       ${d.agreements.length ? `<h3>Both runs agree</h3><ul class="cmp-refs">${d.agreements.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
       ${d.coverage.length ? `<h3>Covered by only one</h3><ul class="cmp-refs">${d.coverage.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
-      ${d.cost_usd != null ? `<p class="hint">This comparison cost ≈ $${d.cost_usd.toFixed(2)} API-equivalent.</p>` : ""}`;
+      ${d.real_cost != null ? `<p class="hint">This comparison cost ≈ ${money(d.real_cost)}.</p>` : ""}`;
   } catch (err) {
     target.innerHTML = `<h2>What they actually say</h2><div class="banner bad">${esc(err.message)}</div>`;
   }
@@ -976,7 +976,8 @@ if (hash.startsWith("compare=")) {
 else loadHistory();
 // ------------------------------------------------------------------ spend
 
-const money = (n) => (n >= 1 ? `$${n.toFixed(2)}` : n > 0 ? `$${n.toFixed(4)}` : "$0");
+// US$ throughout: providers bill in US dollars and the reader may not.
+const money = (n) => (n >= 1 ? `US$${n.toFixed(2)}` : n > 0 ? `US$${n.toFixed(4)}` : "US$0");
 
 function spendRow(label, bucket, cls = "") {
   const calls = bucket.calls ? ` <span style="opacity:.6">${bucket.calls}</span>` : "";
@@ -1007,7 +1008,7 @@ async function loadSpend() {
 
   const parts = [];
   if (d.price) {
-    parts.push(`Priced from ${esc(d.price.source)}: $${d.price.input}/M in, $${d.price.output}/M out.`);
+    parts.push(`Priced from ${esc(d.price.source)}: US$${d.price.input}/M in, US$${d.price.output}/M out.`);
   } else {
     parts.push("Priced by the harness at Anthropic's rates.");
   }
