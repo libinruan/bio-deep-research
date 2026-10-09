@@ -46,7 +46,7 @@ check it beforehand rather than wondering what broke.
 ## Install
 
 ```bash
-git clone https://github.com/<owner>/bio-deep-research.git
+git clone https://github.com/libinruan/bio-deep-research.git
 cd bio-deep-research
 conda env create -p ./.conda -f environment.yml   # a couple of minutes
 cp .env.example .env
