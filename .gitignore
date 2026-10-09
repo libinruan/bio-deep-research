@@ -1,3 +1,5 @@
+.venv/
+# left over from the old conda setup; safe to delete
 .conda/
 __pycache__/
 data/

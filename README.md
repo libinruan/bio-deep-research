@@ -34,7 +34,7 @@ take the lot; a search with a run still going is kept and named rather than dele
 | | Why |
 |---|---|
 | Linux or macOS | Developed on Linux. macOS should work; Windows is untested. |
-| [conda](https://conda-forge.org/download/) or mamba | Builds the Python 3.12 environment. Nothing is installed outside this directory. |
+| [uv](https://docs.astral.sh/uv/) | Builds the environment and fetches Python 3.12 if you don't have it. One binary: `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 | A model — either [Claude Code](https://code.claude.com/docs) installed and logged in, **or** an API key for any Anthropic-compatible endpoint | The agent runs on the Claude Agent SDK, which launches the `claude` CLI as a subprocess. See [Choosing a model engine](#choosing-a-model-engine) for the key-based route. |
 | Outbound HTTPS | PubMed and PubTator3 (NCBI), Europe PMC (EBI), OpenAlex, ClinicalTrials.gov. Every search is live; there is no offline cache. |
 | Chrome or Chromium — *optional* | Only for **PDF** export. Markdown, HTML, BibTeX and RIS need nothing extra. |
@@ -48,13 +48,14 @@ check it beforehand rather than wondering what broke.
 ```bash
 git clone https://github.com/libinruan/bio-deep-research.git
 cd bio-deep-research
-conda env create -p ./.conda -f environment.yml   # a couple of minutes
 cp .env.example .env
 ```
 
-The environment lands at `./.conda` *inside* the checkout and `run.sh` calls
-`./.conda/bin/python` directly, so there is nothing to activate and uninstalling is `rm -rf`
-on the directory.
+There is no install step: `./run.sh` builds the environment from `uv.lock` the first time it
+runs, fetching Python 3.12 if your system lacks it. It lands in `./.venv` *inside* the
+checkout, so nothing is activated and uninstalling is `rm -rf` on the directory. Every
+dependency is pinned by `uv.lock`, down to transitive ones, so you get the same versions
+this was tested against.
 
 Every setting in `.env` is optional, but set this one:
 
@@ -65,6 +66,9 @@ BDR_CONTACT_EMAIL=you@example.org
 NCBI's usage policy expects a contact address on automated traffic, and OpenAlex routes
 requests carrying one into a faster pool. It goes to those two services and nowhere else.
 `.env` is sourced by bash, so quote any value containing spaces, `#` or `$`.
+
+To run a one-off command in the project environment, use `uv run python …` — or
+`uv sync` to build it without starting the server.
 
 ## Choosing a model engine
 
@@ -265,6 +269,7 @@ app/
   agent.py      Claude Agent SDK runner: research turn, audit, comparison
   export.py     Markdown, HTML, PDF, BibTeX and RIS output
   server.py     FastAPI server: runs, live event stream, threads, exports
+  usage.py      per-call cost accounting, priced from the provider's own rates
   static/       the web UI (vendor/ holds marked and DOMPurify)
 agent_home/.claude/skills/   skills the agent can load
 data/threads/                saved searches (JSON, gitignored)

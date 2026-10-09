@@ -35,9 +35,10 @@ minified builds. Details in
 
 ## Not covered here
 
-Python packages declared in `environment.yml` — claude-agent-sdk, FastAPI,
-uvicorn, httpx, pydantic — are installed by pip at setup time rather than
-redistributed here, and carry their own licences in the installed environment.
+Python packages declared in `pyproject.toml` and pinned in `uv.lock` —
+claude-agent-sdk, FastAPI, uvicorn, httpx, pydantic and their dependencies —
+are fetched at setup time rather than redistributed here, and carry their own
+licences in the installed environment.
 
 ## Literature data
 
