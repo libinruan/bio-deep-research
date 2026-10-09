@@ -122,20 +122,27 @@ come back on restart.
 
 ## What it costs
 
-The app is free; the model is not. Every run bills whichever engine you configured. Measured
-on this project:
+The app is free; the model is not. Every run bills whichever engine you configured — the
+**same engine does every task**, from the search to the audit. The table below says which
+engine each figure was measured on, not which one the app uses.
 
-| Run | Engine | Rough cost |
+| Run | Measured on | Cost |
 |---|---|---|
-| Quick answer | `z-ai/glm-5.3` via OpenRouter | ~US$0.03 |
-| Deep research | `claude-opus-5-5` | ~US$5 |
+| Quick answer | `z-ai/glm-5.3` | ~US$0.005 |
+| Quick answer + **Audit claims** | `z-ai/glm-5.3` | ~US$0.08 |
+| Deep research | `claude-opus-5-5` | ~US$4.90 |
 | Deep research + **Audit claims** | `claude-opus-5-5` | ~US$7 |
 
-All figures in this README and in the app are **US dollars**, the currency providers bill in.
+Deep research on a cheap model has not been measured, so no figure is quoted for it. Judging
+by quick-mode ratios it should land far below a dollar, but that is extrapolation, not a
+measurement.
 
-Deep mode makes 30 or more tool calls across many turns with a long context, and the audit
-re-reads every cited abstract; those two options dominate the bill. Treat the figures as an
-order of magnitude, not a quote — cost scales with how much literature a question pulls in.
+Two things drive the bill. Deep mode makes 30 or more tool calls across many turns with a
+long context. And **the audit can cost more than the search it checks** — on `z-ai/glm-5.3`
+it came to US$0.075 against US$0.005 for the search, because the audit emits a long JSON
+report and that model charges US$3.39 per million output tokens against US$0.039 for input.
+On Claude the ratio is far milder. If you audit heavily, output price is the number to watch.
+
 On a Claude subscription, runs draw against your usage limits rather than a card.
 
 ### Tracking what you actually spend
