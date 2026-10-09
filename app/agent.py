@@ -20,7 +20,7 @@ from claude_agent_sdk import (
     query,
 )
 
-from . import prompts, sources
+from . import prompts, sources, usage
 from .registry import CITATION_RE, Registry
 from .tools import SERVER, build_server
 
@@ -119,6 +119,15 @@ def _assistant_error_text(kind: str, stderr_tail: str) -> str:
     return f"{text}\n\nDetail from Claude Code:\n{stderr_tail}" if stderr_tail else text
 
 
+def usage_of(final: ResultMessage) -> dict[str, Any]:
+    """Tokens for one call, plus the harness's own cost figure.
+
+    That figure is only trustworthy on Anthropic's own endpoint; elsewhere it prices the
+    run at Claude's rates. `app.usage` recomputes from the tokens in that case.
+    """
+    return {"tokens": usage.tokens_from(final.usage), "harness_cost": final.total_cost_usd}
+
+
 def _error_text(msg: ResultMessage) -> str:
     detail = "; ".join(msg.errors or []) or msg.result or msg.subtype
     if msg.subtype == "error_max_turns":
@@ -199,7 +208,8 @@ async def research(
     return {
         "report": report,
         "session_id": final.session_id,
-        "usage": {"cost_usd": final.total_cost_usd, "turns": final.num_turns, "seconds": round(final.duration_ms / 1000)},
+        "usage": {"cost_usd": final.total_cost_usd, "turns": final.num_turns,
+                  "seconds": round(final.duration_ms / 1000), **usage_of(final)},
     }
 
 
@@ -229,6 +239,7 @@ async def _structured(system: str, prompt: str, schema: dict[str, Any], effort: 
     if not isinstance(out, dict):
         raise ResearchError("The model returned no structured result.")
     out["cost_usd"] = final.total_cost_usd
+    out["usage"] = usage_of(final)
     return out
 
 
@@ -410,4 +421,5 @@ async def audit(registry: Registry, report: str) -> dict[str, Any]:
     if not isinstance(out, dict):
         raise ResearchError("The audit returned no structured result.")
     out["cost_usd"] = final.total_cost_usd
+    out["usage"] = usage_of(final)
     return out

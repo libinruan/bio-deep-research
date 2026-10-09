@@ -21,6 +21,14 @@
   </div>
   <nav id="history"></nav>
   <label class="side-toggle"><input type="checkbox" id="entity-toggle" checked> Highlight genes &amp; drugs</label>
+  <div id="spend" class="spend" hidden>
+    <div class="spend-head">
+      <span class="side-label-plain">Spend</span>
+      <button id="spend-reset" class="link-btn" title="Start the running total again; history is kept">Reset</button>
+    </div>
+    <div id="spend-figures"></div>
+    <div id="spend-note" class="spend-note"></div>
+  </div>
   <div id="health" class="health"></div>
   <button id="engine-check" class="btn small wide">Test connection</button>
   <div id="engine-result" class="engine-result" hidden></div>

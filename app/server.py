@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import agent, entities, export
+from . import agent, entities, export, usage
 from .registry import Registry
 from .sources import SourceError
 
@@ -90,6 +90,28 @@ def public(thread: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+async def bill(kind: str, result: dict[str, Any], *, thread_id: str | None = None,
+               seconds: float | None = None) -> float | None:
+    """Record one model call and return what it really cost, in dollars.
+
+    On Anthropic's own endpoint the harness's figure is correct and is used as-is. On any
+    other provider it is priced at Claude's rates, so the cost is recomputed from the token
+    counts and that provider's published prices.
+    """
+    engine = agent.engine()
+    tokens = (result.get("tokens") or usage.tokens_from(None))
+    price = await usage.price_for(engine["model"], engine["base_url"], engine["third_party"])
+    if price is not None:
+        cost, basis = price.cost(tokens), price.source
+    elif not engine["third_party"]:
+        cost, basis = result.get("harness_cost"), "harness (Anthropic rates)"
+    else:
+        cost, basis = None, "unknown — set BDR_PRICE_IN and BDR_PRICE_OUT to price this engine"
+    usage.record(kind=kind, engine=engine["model"], tokens=tokens, cost=cost,
+                 basis=basis, seconds=seconds, thread_id=thread_id)
+    return cost
+
+
 # ----------------------------------------------------------------------------- running
 
 async def execute(thread: dict[str, Any], turn: dict[str, Any], run: Run, want_audit: bool) -> None:
@@ -109,6 +131,8 @@ async def execute(thread: dict[str, Any], turn: dict[str, Any], run: Run, want_a
         )
         turn["engine"] = agent.engine()["model"]
         turn["third_party"] = agent.engine()["third_party"]
+        result["usage"]["real_cost"] = await bill(
+            "research", result["usage"], thread_id=thread["id"], seconds=result["usage"]["seconds"])
         thread["session_id"] = result["session_id"]
         # A resumed session reports its running total, so charge this turn only the difference.
         total = result["usage"]["cost_usd"]
@@ -130,6 +154,8 @@ async def execute(thread: dict[str, Any], turn: dict[str, Any], run: Run, want_a
             emit({"type": "status", "text": "Auditing each claim against its cited source"})
             try:
                 turn["audit"] = await agent.audit(registry, result["report"])
+                turn["audit"]["real_cost"] = await bill(
+                    "audit", turn["audit"].get("usage") or {}, thread_id=thread["id"])
                 numbers = {ref["key"]: ref["n"] for ref in final["references"]}
                 for issue in turn["audit"]["issues"]:
                     rec = registry.get(issue["citation"])
@@ -425,9 +451,11 @@ async def compare_summary(a: str, b: str) -> dict[str, Any]:
                      "date": time.strftime("%Y-%m-%d", time.localtime(turn["started"])),
                      "sources": len(turn["references"]), "report": turn["report"]})
     try:
-        return await agent.compare(pair[0], pair[1])
+        out = await agent.compare(pair[0], pair[1])
     except agent.ResearchError as exc:
         raise HTTPException(503, str(exc)) from exc
+    out["real_cost"] = await bill("compare", out.get("usage") or {})
+    return out
 
 
 ENTITY_CACHE_VERSION = 3
@@ -455,6 +483,27 @@ async def thread_entities(thread_id: str) -> dict[str, Any]:
 async def engine_check() -> dict[str, Any]:
     """Ask the configured model one trivial question, so a provider setup can be verified."""
     return await agent.check_engine()
+
+
+@app.get("/api/usage")
+async def usage_summary() -> dict[str, Any]:
+    """Spend for this hour, today, since the last reset, and all time."""
+    engine = agent.engine()
+    price = await usage.price_for(engine["model"], engine["base_url"], engine["third_party"])
+    return {
+        **usage.summary(),
+        "engine": engine["model"],
+        "price": None if price is None else {
+            "input": price.inp, "output": price.out,
+            "cache_read": price.cache_read, "source": price.source,
+        },
+    }
+
+
+@app.post("/api/usage/reset")
+async def usage_reset() -> dict[str, Any]:
+    """Start the running total again. The history is kept, so daily figures survive."""
+    return {"reset_at": usage.reset()}
 
 
 @app.get("/api/health")

@@ -132,9 +132,22 @@ re-reads every cited abstract; those two options dominate the bill. Treat the fi
 order of magnitude, not a quote — cost scales with how much literature a question pulls in.
 On a Claude subscription, runs draw against your usage limits rather than a card.
 
-The cost shown at the foot of a finished answer is **hidden when a third-party engine is
-configured**, because the harness prices every run at Claude's rates and the number would be
-wrong. Check your provider's dashboard instead.
+### Tracking what you actually spend
+
+The **Spend** panel in the sidebar totals this hour, today, since your last reset, and all
+time, with a bar per day for the last fortnight. **Reset** restarts the running total and
+keeps the history, so the daily figures survive it.
+
+Figures are recomputed from token counts and your provider's own published prices, because
+the harness reports every run at Anthropic's rates whatever endpoint was used — on one
+measured GLM-5.3 search it said $0.195 for work that actually cost $0.0077. Prices come from
+OpenRouter's live list; for a provider with no machine-readable prices, set `BDR_PRICE_IN`
+and `BDR_PRICE_OUT` in `.env` (dollars per million tokens) and those are used instead. On a
+Claude login the harness's own figure is correct and is used as-is.
+
+These are estimates from token counts, not billed amounts — check your provider's dashboard
+for the authoritative number. Every call is logged to `data/usage.jsonl`, which is gitignored
+along with the rest of `data/`.
 
 ## Running it safely
 

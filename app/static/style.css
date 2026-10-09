@@ -235,3 +235,15 @@ h1 { font: 600 30px/1.2 Georgia, "Times New Roman", serif; margin: 0 0 8px; }
 .engine-result { margin-top: 8px; padding: 8px 10px; border-radius: 8px; font-size: 12px; line-height: 1.45; }
 .engine-result.ok { background: var(--good-soft); color: var(--good); }
 .engine-result.bad { background: var(--bad-soft); color: var(--bad); word-break: break-word; }
+
+/* ---- spend ---- */
+.spend { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; font-size: 12px; }
+.spend-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.side-label-plain { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.spend-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; color: var(--muted); }
+.spend-row b { color: var(--ink); font-weight: 650; font-variant-numeric: tabular-nums; }
+.spend-row.total b { color: var(--accent); }
+.spend-note { color: var(--muted); font-size: 11px; margin-top: 6px; line-height: 1.4; }
+.spend-bars { display: flex; align-items: flex-end; gap: 2px; height: 26px; margin: 8px 0 2px; }
+.spend-bars i { flex: 1; background: var(--accent-soft); border-radius: 2px 2px 0 0; min-height: 1px; }
+.spend-bars i.on { background: var(--accent); }

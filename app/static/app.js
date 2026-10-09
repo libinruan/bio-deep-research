@@ -227,7 +227,7 @@ function listen(turn) {
       else if (ev.type === "final") { Object.assign(turn, ev.turn); tabs[turn.id] = "sources"; }
       else if (ev.type === "audit") turn.audit = ev.audit;
       else if (ev.type === "error") { turn.status = turn.status === "done" ? "done" : "error"; turn.error = ev.message; }
-      else if (ev.type === "done") { es.close(); turn.live = false; syncFollow(); loadHistory(); }
+      else if (ev.type === "done") { es.close(); turn.live = false; syncFollow(); loadHistory(); loadSpend(); }
       renderTurn(turn);
     };
     es.onerror = () => { es.close(); if (turn.live) setTimeout(connect, 1500); };
@@ -354,8 +354,8 @@ function renderTurn(turn) {
     turn.mode === "deep" ? "Deep research" : "Quick answer",
     turn.hypotheses ? "with hypotheses" : "",
     turn.usage ? `${turn.usage.seconds}s` : "",
-    turn.third_party ? esc(turn.engine || "other engine")
-      : (turn.usage && turn.usage.cost_usd != null ? `≈ $${turn.usage.cost_usd.toFixed(2)} API-equivalent` : ""),
+    turn.usage && turn.usage.real_cost != null ? `≈ ${money(turn.usage.real_cost)}`
+      : (turn.third_party ? esc(turn.engine || "other engine") : ""),
   ].filter(Boolean).map((c) => `<span class="badge">${esc(c)}</span>`).join("");
 
   const problems = (turn.problems || []).length ? `
@@ -967,12 +967,70 @@ $("#turns").addEventListener("mouseout", (e) => { if (e.target.closest("a.cite")
 // ------------------------------------------------------------------ boot
 
 syncHint();
+loadSpend();
 const hash = location.hash.slice(1);
 if (hash.startsWith("compare=")) {
   const [a, b] = hash.slice(8).split(",");
   openCompare(a, b);
 } else if (hash) openThread(hash).catch(showHome);
 else loadHistory();
+// ------------------------------------------------------------------ spend
+
+const money = (n) => (n >= 1 ? `$${n.toFixed(2)}` : n > 0 ? `$${n.toFixed(4)}` : "$0");
+
+function spendRow(label, bucket, cls = "") {
+  const calls = bucket.calls ? ` <span style="opacity:.6">${bucket.calls}</span>` : "";
+  return `<div class="spend-row ${cls}"><span>${esc(label)}${calls}</span><b>${money(bucket.cost)}</b></div>`;
+}
+
+async function loadSpend() {
+  let d;
+  try {
+    d = await api("/api/usage");
+  } catch {
+    return;  // accounting is never allowed to break the page
+  }
+  if (!d.all_time.calls) { $("#spend").hidden = true; return; }
+  $("#spend").hidden = false;
+
+  const days = d.by_day.slice(-14);
+  const peak = Math.max(...days.map((x) => x.cost), 0.0001);
+  const bars = days.map((x) => `<i class="${x.cost > 0 ? "on" : ""}" style="height:${Math.max(1, (x.cost / peak) * 100)}%"
+    title="${esc(x.date)}: ${money(x.cost)} over ${x.calls} call${x.calls === 1 ? "" : "s"}"></i>`).join("");
+
+  $("#spend-figures").innerHTML =
+    spendRow("This hour", d.hour) +
+    spendRow("Today", d.today) +
+    spendRow("Since reset", d.since_reset, "total") +
+    spendRow("All time", d.all_time) +
+    `<div class="spend-bars" title="Daily spend, last 14 days">${bars}</div>`;
+
+  const parts = [];
+  if (d.price) {
+    parts.push(`Priced from ${esc(d.price.source)}: $${d.price.input}/M in, $${d.price.output}/M out.`);
+  } else {
+    parts.push("Priced by the harness at Anthropic's rates.");
+  }
+  if (d.all_time.unpriced) {
+    parts.push(`${d.all_time.unpriced} call${d.all_time.unpriced === 1 ? "" : "s"} could not be priced.`);
+  }
+  $("#spend-note").innerHTML = esc(parts.join(" ")) + " Estimated from token counts, not billed amounts.";
+}
+
+$("#spend-reset").addEventListener("click", async (e) => {
+  const button = e.target;
+  if (button.dataset.armed !== "1") {
+    button.dataset.armed = "1";
+    button.textContent = "Reset? Click again";
+    setTimeout(() => { delete button.dataset.armed; button.textContent = "Reset"; }, 4000);
+    return;
+  }
+  delete button.dataset.armed;
+  button.textContent = "Reset";
+  await api("/api/usage/reset", { method: "POST" }).catch(() => {});
+  loadSpend();
+});
+
 $("#engine-check").addEventListener("click", async (e) => {
   const button = e.target;
   const out = $("#engine-result");
